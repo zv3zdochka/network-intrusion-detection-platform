@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from .common import ensure_dir, write_json
+from .common import ensure_dir, write_json, normalize_label
 
 try:
     import matplotlib.pyplot as plt  # type: ignore
@@ -63,7 +63,10 @@ def audit_bronze(
 
         # label distribution
         if label_col in df.columns:
-            vc = df[label_col].astype(str).value_counts(dropna=False)
+            s = df[label_col].astype("string")
+            s = s.map(normalize_label, na_action="ignore")
+            # Use a stable token for missing labels to keep JSON serializable
+            vc = s.fillna("(missing)").value_counts(dropna=False)
             for k, v in vc.items():
                 label_counts[k] = label_counts.get(k, 0) + int(v)
 
@@ -119,27 +122,46 @@ def audit_bronze(
 
     # Figures (optional)
     if plt is not None:
-        # label distribution
+        try:
+            plt.style.use("seaborn-v0_8-whitegrid")
+        except Exception:
+            pass
+
+        # 1) Label distribution
         if label_counts:
             lc = pd.Series(label_counts).sort_values(ascending=False)
-            plt.figure()
-            lc.plot(kind="bar")
-            plt.title("Label distribution (bronze)")
-            plt.ylabel("count")
-            plt.tight_layout()
-            plt.savefig(fig_dir / "label_distribution.png", dpi=160)
-            plt.close()
 
-        # missing top-30
-        mr = pd.Series(missing_rate).sort_values(ascending=False).head(30)
-        plt.figure()
-        mr.plot(kind="bar")
-        plt.title("Top missing-rate columns (top 30)")
-        plt.ylabel("missing rate")
-        plt.tight_layout()
-        plt.savefig(fig_dir / "missing_rate_top30.png", dpi=160)
-        plt.close()
+            # If labels are extremely imbalanced, a log scale is more informative.
+            fig = plt.figure(figsize=(12, 4))
+            ax = fig.add_subplot(1, 1, 1)
+            lc.plot(kind="bar", ax=ax)
+            ax.set_title("Label distribution (bronze)")
+            ax.set_ylabel("count")
+            ax.set_yscale("log")
+            ax.tick_params(axis="x", labelrotation=45)
+            for tick in ax.get_xticklabels():
+                tick.set_horizontalalignment("right")
+            fig.tight_layout()
+            fig.savefig(fig_dir / "label_distribution.png", dpi=220)
+            plt.close(fig)
 
+        # 2) Missing-rate (top 30)
+        if missing_rate:
+            mr = pd.Series(missing_rate).sort_values(ascending=False).head(30)
+            fig = plt.figure(figsize=(12, 4))
+            ax = fig.add_subplot(1, 1, 1)
+            mr.plot(kind="bar", ax=ax)
+            ax.set_title("Top missing-rate columns (top 30)")
+            ax.set_ylabel("missing rate")
+            ax.set_ylim(0, min(1.0, float(mr.max()) * 1.15 if len(mr) else 1.0))
+            ax.tick_params(axis="x", labelrotation=45)
+            for tick in ax.get_xticklabels():
+                tick.set_horizontalalignment("right")
+            fig.tight_layout()
+            fig.savefig(fig_dir / "missing_rate_top30.png", dpi=220)
+            plt.close(fig)
+
+        # 3) Correlation heatmap (sampled)
         if sample_df is not None:
             num = sample_df.select_dtypes(include=[np.number])
             if num.shape[1] > 2:
@@ -147,13 +169,18 @@ def audit_bronze(
                 cols = var.head(max_corr_features).index.tolist()
                 corr = num[cols].corr()
 
-                plt.figure(figsize=(10, 8))
-                plt.imshow(corr.values)
-                plt.xticks(range(len(cols)), cols, rotation=90, fontsize=6)
-                plt.yticks(range(len(cols)), cols, fontsize=6)
-                plt.title("Correlation heatmap (sampled, top-variance features)")
-                plt.tight_layout()
-                plt.savefig(fig_dir / "corr_heatmap.png", dpi=160)
-                plt.close()
+                fig = plt.figure(figsize=(12, 10))
+                ax = fig.add_subplot(1, 1, 1)
+                im = ax.imshow(corr.values, vmin=-1, vmax=1)
+                ax.set_xticks(range(len(cols)))
+                ax.set_yticks(range(len(cols)))
+                ax.set_xticklabels(cols, rotation=90, fontsize=7)
+                ax.set_yticklabels(cols, fontsize=7)
+                ax.set_title("Correlation heatmap (sampled, top-variance features)")
+                fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+                fig.tight_layout()
+                fig.savefig(fig_dir / "corr_heatmap.png", dpi=220)
+                plt.close(fig)
 
     return report
+

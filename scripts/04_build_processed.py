@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 from pathlib import Path
 import argparse
 from src.data.build import build_processed_dataset

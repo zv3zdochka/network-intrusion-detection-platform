@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 from pathlib import Path
 import argparse
 from src.data.manifest import build_manifest

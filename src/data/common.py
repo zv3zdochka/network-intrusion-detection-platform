@@ -17,12 +17,15 @@ def ensure_dir(path: Path) -> Path:
 def slugify_column(name: str) -> str:
     """
     Make a safe column name:
+    - normalize common whitespace (incl. NBSP)
     - strip
     - lower
     - replace non-alnum with underscore
     - collapse underscores
     """
-    s = (name or "").strip().lower()
+    s = (name or "")
+    # Some CICIDS files contain non-breaking spaces in headers.
+    s = s.replace("\u00a0", " ").strip().lower()
     s = re.sub(r"[^a-z0-9]+", "_", s)
     s = re.sub(r"_+", "_", s).strip("_")
     return s or "col"
@@ -47,10 +50,28 @@ def make_unique(names: List[str]) -> List[str]:
 
 
 def normalize_label(x: str) -> str:
+    """Normalize raw CICIDS label strings.
+
+    The CICIDS-2017 CSVs are often encoded as cp1252 and sometimes include
+    an en dash between tokens (commonly seen as 'Web Attack – XSS').
+    If read with the wrong encoding, that dash may become the replacement
+    character (\uFFFD). We normalize these cases to a simple hyphen.
+
+    Note: keep this function *pure* and safe to call on any scalar.
+    """
     if x is None:
         return ""
     s = str(x).strip()
-    s = re.sub(r"\s+", " ", s)
+
+    # Normalize various dash / replacement artefacts
+    s = s.replace("\uFFFD", "-")  # replacement char
+    s = s.replace("�", "-")  # sometimes appears in terminal/fonts
+    s = s.replace("–", "-").replace("—", "-")  # en/em dash
+
+    # Normalize spacing around hyphens and collapse whitespace
+    s = re.sub(r"\s*-\s*", " - ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+
     return s
 
 

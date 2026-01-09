@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Optional utility: merges raw CICIDS-2017 CSV files into a single CSV.
 
