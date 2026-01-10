@@ -1,9 +1,9 @@
 """
-Neural Network model (MLP)
+Neural Network model (MLP).
 """
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -18,11 +18,12 @@ except ImportError:
     HAS_TORCH = False
 
 from sklearn.neural_network import MLPClassifier
+
 from .base import BaseModel
 
 
 class NeuralNetModel(BaseModel):
-    """Neural Network классификатор (sklearn MLP или PyTorch)"""
+    """Neural network classifier (sklearn MLP or PyTorch)."""
 
     def __init__(
             self,
@@ -38,7 +39,7 @@ class NeuralNetModel(BaseModel):
             use_pytorch: bool = False,
             use_gpu: bool = False,
             random_state: int = 42,
-            **kwargs
+            **kwargs,
     ):
         super().__init__(name=name, task=task, random_state=random_state)
 
@@ -52,37 +53,38 @@ class NeuralNetModel(BaseModel):
         self.use_pytorch = use_pytorch and HAS_TORCH
         self.use_gpu = use_gpu and HAS_TORCH and torch.cuda.is_available()
 
-        self.params.update({
-            'hidden_layers': hidden_layers,
-            'activation': activation,
-            'learning_rate': learning_rate,
-            'batch_size': batch_size,
-            'max_epochs': max_epochs,
-            'dropout': dropout,
-            'use_pytorch': self.use_pytorch
-        })
+        self.params.update(
+            {
+                "hidden_layers": hidden_layers,
+                "activation": activation,
+                "learning_rate": learning_rate,
+                "batch_size": batch_size,
+                "max_epochs": max_epochs,
+                "dropout": dropout,
+                "use_pytorch": self.use_pytorch,
+            }
+        )
 
         self.model = self._create_model()
-        self.device = torch.device('cuda' if self.use_gpu else 'cpu') if HAS_TORCH else None
+        self.device = torch.device("cuda" if self.use_gpu else "cpu") if HAS_TORCH else None
 
     def _create_model(self):
         if self.use_pytorch:
-            return None  # Создадим при fit когда узнаем размерность
-        else:
-            return MLPClassifier(
-                hidden_layer_sizes=self.hidden_layers,
-                activation=self.activation,
-                learning_rate_init=self.learning_rate,
-                batch_size=self.batch_size,
-                max_iter=self.max_epochs,
-                early_stopping=self.early_stopping,
-                validation_fraction=0.1 if self.early_stopping else 0.0,
-                random_state=self.random_state,
-                verbose=False
-            )
+            return None  # Will be created during fit once input dimensionality is known.
+        return MLPClassifier(
+            hidden_layer_sizes=self.hidden_layers,
+            activation=self.activation,
+            learning_rate_init=self.learning_rate,
+            batch_size=self.batch_size,
+            max_iter=self.max_epochs,
+            early_stopping=self.early_stopping,
+            validation_fraction=0.1 if self.early_stopping else 0.0,
+            random_state=self.random_state,
+            verbose=False,
+        )
 
-    def _create_pytorch_model(self, input_dim: int, output_dim: int) -> nn.Module:
-        """Создать PyTorch модель"""
+    def _create_pytorch_model(self, input_dim: int, output_dim: int) -> "nn.Module":
+        """Create a PyTorch MLP model."""
         layers = []
         prev_dim = input_dim
 
@@ -111,13 +113,13 @@ class NeuralNetModel(BaseModel):
             X_val: Optional[np.ndarray] = None,
             y_val: Optional[np.ndarray] = None,
             feature_names: Optional[list] = None,
-            **kwargs
+            **kwargs,
     ) -> "NeuralNetModel":
-        """Обучить модель"""
+        """Fit the model."""
         self.feature_names = feature_names
 
-        print(f"🧠 Training {self.name}...")
-        print(f"   Parameters: layers={self.hidden_layers}, lr={self.learning_rate}")
+        print(f"Training {self.name}...")
+        print(f"Parameters: layers={self.hidden_layers}, lr={self.learning_rate}")
 
         start_time = time.time()
 
@@ -129,7 +131,7 @@ class NeuralNetModel(BaseModel):
         self.training_time = time.time() - start_time
         self.is_fitted = True
 
-        print(f"   ✅ Training completed in {self.training_time:.1f}s")
+        print(f"Training completed in {self.training_time:.1f}s")
 
         return self
 
@@ -138,23 +140,24 @@ class NeuralNetModel(BaseModel):
             X_train: np.ndarray,
             y_train: np.ndarray,
             X_val: Optional[np.ndarray] = None,
-            y_val: Optional[np.ndarray] = None
+            y_val: Optional[np.ndarray] = None,
     ):
-        """Обучение PyTorch модели"""
+        """Train the PyTorch model."""
         input_dim = X_train.shape[1]
         output_dim = 1 if self.task == "binary" else len(np.unique(y_train))
 
         self.model = self._create_pytorch_model(input_dim, output_dim).to(self.device)
 
-        # Подготовка данных
         X_tensor = torch.FloatTensor(X_train).to(self.device)
-        y_tensor = torch.FloatTensor(y_train).to(self.device) if self.task == "binary" else torch.LongTensor(
-            y_train).to(self.device)
+        y_tensor = (
+            torch.FloatTensor(y_train).to(self.device)
+            if self.task == "binary"
+            else torch.LongTensor(y_train).to(self.device)
+        )
 
         dataset = TensorDataset(X_tensor, y_tensor)
         dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
-        # Loss и optimizer
         if self.task == "binary":
             criterion = nn.BCELoss()
         else:
@@ -162,10 +165,9 @@ class NeuralNetModel(BaseModel):
 
         optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
-        # Training loop
         self.model.train()
         for epoch in range(self.max_epochs):
-            epoch_loss = 0
+            epoch_loss = 0.0
             for batch_X, batch_y in dataloader:
                 optimizer.zero_grad()
                 outputs = self.model(batch_X)
@@ -184,10 +186,8 @@ class NeuralNetModel(BaseModel):
                 outputs = self.model(X_tensor)
                 if self.task == "binary":
                     return (outputs.squeeze().cpu().numpy() > 0.5).astype(int)
-                else:
-                    return outputs.argmax(dim=1).cpu().numpy()
-        else:
-            return self.model.predict(X)
+                return outputs.argmax(dim=1).cpu().numpy()
+        return self.model.predict(X)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         if self.use_pytorch:
@@ -198,7 +198,5 @@ class NeuralNetModel(BaseModel):
                 if self.task == "binary":
                     proba = outputs.squeeze()
                     return np.column_stack([1 - proba, proba])
-                else:
-                    return outputs
-        else:
-            return self.model.predict_proba(X)
+                return outputs
+        return self.model.predict_proba(X)

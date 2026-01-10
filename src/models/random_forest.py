@@ -1,9 +1,9 @@
 """
-Random Forest model
+Random Forest model.
 """
 
 import time
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -12,7 +12,7 @@ from .base import BaseModel
 
 
 class RandomForestModel(BaseModel):
-    """Random Forest классификатор"""
+    """Random Forest classifier."""
 
     def __init__(
             self,
@@ -26,7 +26,7 @@ class RandomForestModel(BaseModel):
             class_weight: str = "balanced",
             n_jobs: int = -1,
             random_state: int = 42,
-            **kwargs
+            **kwargs,
     ):
         super().__init__(name=name, task=task, random_state=random_state)
 
@@ -38,14 +38,16 @@ class RandomForestModel(BaseModel):
         self.class_weight = class_weight
         self.n_jobs = n_jobs
 
-        self.params.update({
-            'n_estimators': n_estimators,
-            'max_depth': max_depth,
-            'min_samples_split': min_samples_split,
-            'min_samples_leaf': min_samples_leaf,
-            'max_features': max_features,
-            'class_weight': class_weight
-        })
+        self.params.update(
+            {
+                "n_estimators": n_estimators,
+                "max_depth": max_depth,
+                "min_samples_split": min_samples_split,
+                "min_samples_leaf": min_samples_leaf,
+                "max_features": max_features,
+                "class_weight": class_weight,
+            }
+        )
 
         self.model = self._create_model()
 
@@ -59,7 +61,7 @@ class RandomForestModel(BaseModel):
             class_weight=self.class_weight,
             n_jobs=self.n_jobs,
             random_state=self.random_state,
-            verbose=0
+            verbose=0,
         )
 
     def fit(
@@ -69,13 +71,13 @@ class RandomForestModel(BaseModel):
             X_val: Optional[np.ndarray] = None,
             y_val: Optional[np.ndarray] = None,
             feature_names: Optional[list] = None,
-            **kwargs
+            **kwargs,
     ) -> "RandomForestModel":
-        """Обучить модель"""
+        """Fit the model."""
         self.feature_names = feature_names
 
-        print(f"🌲 Training {self.name}...")
-        print(f"   Parameters: n_estimators={self.n_estimators}, max_depth={self.max_depth}")
+        print(f"Training {self.name}...")
+        print(f"Parameters: n_estimators={self.n_estimators}, max_depth={self.max_depth}")
 
         start_time = time.time()
         self.model.fit(X_train, y_train)
@@ -83,6 +85,6 @@ class RandomForestModel(BaseModel):
 
         self.is_fitted = True
 
-        print(f"   ✅ Training completed in {self.training_time:.1f}s")
+        print(f"Training completed in {self.training_time:.1f}s")
 
         return self

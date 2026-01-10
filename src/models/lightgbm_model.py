@@ -1,9 +1,9 @@
 """
-LightGBM model
+LightGBM model.
 """
 
 import time
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import numpy as np
 
@@ -18,7 +18,7 @@ from .base import BaseModel
 
 
 class LightGBMModel(BaseModel):
-    """LightGBM классификатор"""
+    """LightGBM classifier."""
 
     def __init__(
             self,
@@ -36,7 +36,7 @@ class LightGBMModel(BaseModel):
             class_weight: str = "balanced",
             n_jobs: int = -1,
             random_state: int = 42,
-            **kwargs
+            **kwargs,
     ):
         if not HAS_LIGHTGBM:
             raise ImportError("LightGBM is not installed. Run: pip install lightgbm")
@@ -55,22 +55,24 @@ class LightGBMModel(BaseModel):
         self.class_weight = class_weight
         self.n_jobs = n_jobs
 
-        self.params.update({
-            'n_estimators': n_estimators,
-            'max_depth': max_depth,
-            'num_leaves': num_leaves,
-            'learning_rate': learning_rate,
-            'subsample': subsample,
-            'colsample_bytree': colsample_bytree,
-            'min_child_samples': min_child_samples,
-            'reg_alpha': reg_alpha,
-            'reg_lambda': reg_lambda,
-            'class_weight': class_weight
-        })
+        self.params.update(
+            {
+                "n_estimators": n_estimators,
+                "max_depth": max_depth,
+                "num_leaves": num_leaves,
+                "learning_rate": learning_rate,
+                "subsample": subsample,
+                "colsample_bytree": colsample_bytree,
+                "min_child_samples": min_child_samples,
+                "reg_alpha": reg_alpha,
+                "reg_lambda": reg_lambda,
+                "class_weight": class_weight,
+            }
+        )
 
         self.model = self._create_model()
 
-    def _create_model(self) -> lgb.LGBMClassifier:
+    def _create_model(self) -> "lgb.LGBMClassifier":
         objective = "binary" if self.task == "binary" else "multiclass"
 
         return lgb.LGBMClassifier(
@@ -87,7 +89,7 @@ class LightGBMModel(BaseModel):
             objective=objective,
             n_jobs=self.n_jobs,
             random_state=self.random_state,
-            verbose=-1
+            verbose=-1,
         )
 
     def fit(
@@ -98,23 +100,30 @@ class LightGBMModel(BaseModel):
             y_val: Optional[np.ndarray] = None,
             feature_names: Optional[list] = None,
             early_stopping_rounds: int = 50,
-            **kwargs
+            **kwargs,
     ) -> "LightGBMModel":
-        """Обучить модель"""
+        """Fit the model."""
         self.feature_names = feature_names
 
-        print(f"💡 Training {self.name}...")
-        print(f"   Parameters: n_estimators={self.n_estimators}, num_leaves={self.num_leaves}, lr={self.learning_rate}")
+        print(f"Training {self.name}...")
+        print(
+            "Parameters: "
+            f"n_estimators={self.n_estimators}, "
+            f"num_leaves={self.num_leaves}, "
+            f"lr={self.learning_rate}"
+        )
 
         start_time = time.time()
 
-        callbacks = [lgb.log_evaluation(period=0)]  # Отключаем логи
+        # Disable evaluation logging
+        callbacks = [lgb.log_evaluation(period=0)]
 
         if X_val is not None and y_val is not None:
             self.model.fit(
-                X_train, y_train,
+                X_train,
+                y_train,
                 eval_set=[(X_val, y_val)],
-                callbacks=callbacks
+                callbacks=callbacks,
             )
         else:
             self.model.fit(X_train, y_train, callbacks=callbacks)
@@ -122,6 +131,6 @@ class LightGBMModel(BaseModel):
         self.training_time = time.time() - start_time
         self.is_fitted = True
 
-        print(f"   ✅ Training completed in {self.training_time:.1f}s")
+        print(f"Training completed in {self.training_time:.1f}s")
 
         return self
