@@ -1,16 +1,29 @@
+#!/usr/bin/env python3
+"""
+Скрипт аудита и EDA
+"""
+
+import sys
 from pathlib import Path
-import argparse
-from src.data.audit import audit_bronze
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--bronze-dir", default="data/interim/bronze")
-    ap.add_argument("--reports-dir", default="reports")
-    ap.add_argument("--sample-rows", type=int, default=100_000)
-    args = ap.parse_args()
-    audit_bronze(Path(args.bronze_dir), Path(args.reports_dir), sample_rows=args.sample_rows)
-
+from src.data import load_config, run_audit, run_eda, generate_report
+from src.data.ingest import load_bronze_data
 
 if __name__ == "__main__":
-    main()
+    config = load_config()
+
+    print("Loading bronze data...")
+    df = load_bronze_data(config)
+
+    print("\nRunning audit...")
+    audit_results = run_audit(df, config)
+
+    print("\nRunning EDA...")
+    eda_files = run_eda(df, config)
+
+    print("\nGenerating report...")
+    report_path = generate_report(audit_results, eda_files, config)
+
+    print(f"\n✅ All done! Report: {report_path}")

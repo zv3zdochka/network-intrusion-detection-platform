@@ -1,1 +1,5 @@
-# Package root for repository-local imports
+"""
+Traffic Analysis - Intrusion Detection System
+"""
+
+__version__ = "0.1.0"

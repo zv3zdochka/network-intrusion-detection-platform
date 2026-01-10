@@ -1,16 +1,16 @@
+#!/usr/bin/env python3
+"""
+Скрипт загрузки и объединения данных (bronze layer)
+"""
+
+import sys
 from pathlib import Path
-import argparse
-from src.data.ingest import ingest_folder
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--raw-dir", default="data/raw/CICIDS-2017/TrafficLabelling")
-    ap.add_argument("--interim-dir", default="data/interim")
-    ap.add_argument("--chunksize", type=int, default=200_000)
-    args = ap.parse_args()
-    ingest_folder(Path(args.raw_dir), Path(args.interim_dir), chunksize=args.chunksize)
-
+from src.data import load_config, merge_csv_files
 
 if __name__ == "__main__":
-    main()
+    config = load_config()
+    output_file = merge_csv_files(config)
+    print(f"\nBronze data created: {output_file}")

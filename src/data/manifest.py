@@ -1,101 +1,169 @@
-from __future__ import annotations
+"""
+Создание и управление манифестом данных
+"""
 
-from dataclasses import dataclass
+import json
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from .common import ensure_dir, write_json
+from .common import get_project_root, load_config, get_file_hash, ensure_dir
 
 
-DEFAULT_CSV_ENCODINGS = ("utf-8", "utf-8-sig", "cp1252", "latin1")
+# Список кодировок для попытки чтения
+ENCODINGS_TO_TRY = ['utf-8', 'cp1252', 'latin-1', 'iso-8859-1']
 
 
-def detect_csv_encoding(path: Path, encodings: tuple[str, ...] = DEFAULT_CSV_ENCODINGS, sample_bytes: int = 200_000) -> str:
-    data = path.read_bytes()[:sample_bytes]
-    for enc in encodings:
+def read_csv_safe(file_path: Path, nrows: Optional[int] = None) -> pd.DataFrame:
+    """Безопасное чтение CSV с автоопределением кодировки"""
+    for encoding in ENCODINGS_TO_TRY:
         try:
-            data.decode(enc)
-            return enc
+            df = pd.read_csv(
+                file_path,
+                encoding=encoding,
+                low_memory=False,
+                nrows=nrows
+            )
+            return df
         except UnicodeDecodeError:
             continue
-    return "latin1"
+
+    # Fallback с заменой символов
+    return pd.read_csv(
+        file_path,
+        encoding='utf-8',
+        encoding_errors='replace',
+        low_memory=False,
+        nrows=nrows
+    )
 
 
-
-@dataclass
-class FileManifestRow:
-    filename: str
-    path: str
-    size_bytes: int
-    rows: Optional[int]
-    cols: Optional[int]
-    has_label: Optional[bool]
-
-
-def _count_rows_fast(csv_path: Path) -> int:
-    """
-    Row counting by scanning lines. Fast-ish and memory safe, but still O(file_size).
-    Subtract 1 for header.
-    """
-    n = 0
-    with csv_path.open("rb") as f:
-        for _ in f:
-            n += 1
-    return max(0, n - 1)
-
-
-def build_manifest(raw_dir: Path, out_json: Path, out_csv: Optional[Path] = None, count_rows: bool = True) -> Dict:
-    raw_dir = raw_dir.resolve()
-    files = sorted(raw_dir.glob("*.csv"))
-    rows: List[FileManifestRow] = []
-
-    for fp in files:
-        size = fp.stat().st_size
-        # Read header only
+def count_lines_safe(file_path: Path) -> int:
+    """Подсчёт строк с обработкой кодировки"""
+    for encoding in ENCODINGS_TO_TRY:
         try:
-            enc = detect_csv_encoding(fp)
-            try:
-                header = pd.read_csv(fp, nrows=0, encoding=enc, encoding_errors="replace")
-            except TypeError:
-                header = pd.read_csv(fp, nrows=0, encoding=enc)
-            # CICFlowMeter CSV headers sometimes contain leading/trailing spaces
-            # (e.g., " Label"), so normalize before checks.
-            norm_cols = [str(c).strip() for c in header.columns]
-            cols = len(norm_cols)
-            has_label = any(c.lower() == "label" for c in norm_cols)
-        except Exception:
-            cols = None
-            has_label = None
+            with open(file_path, 'r', encoding=encoding, errors='strict') as f:
+                return sum(1 for _ in f) - 1  # минус заголовок
+        except UnicodeDecodeError:
+            continue
 
-        nrows = _count_rows_fast(fp) if count_rows else None
+    # Fallback с заменой
+    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+        return sum(1 for _ in f) - 1
 
-        rows.append(
-            FileManifestRow(
-                filename=fp.name,
-                path=str(fp),
-                size_bytes=size,
-                rows=nrows,
-                cols=cols,
-                has_label=has_label,
-            )
-        )
 
+def create_manifest(
+    config: Optional[Dict[str, Any]] = None,
+    output_path: Optional[Path] = None
+) -> Dict[str, Any]:
+    """
+    Создать манифест исходных данных
+
+    Манифест содержит:
+    - Список файлов
+    - Размеры и хэши
+    - Базовую статистику
+    """
+    if config is None:
+        config = load_config()
+
+    root = get_project_root()
+    raw_path = root / config["paths"]["raw_data"]
+
+    if output_path is None:
+        output_path = root / config["paths"]["interim_data"]
+
+    ensure_dir(output_path)
+
+    # Собираем информацию о файлах
+    csv_files = sorted(raw_path.glob("*.csv"))
+
+    if not csv_files:
+        raise FileNotFoundError(f"No CSV files found in {raw_path}")
+
+    files_info = []
+    total_rows = 0
+    all_columns = None
+
+    for csv_file in csv_files:
+        print(f"Processing: {csv_file.name}...")
+
+        # Базовая информация
+        file_info = {
+            "filename": csv_file.name,
+            "path": str(csv_file.relative_to(root)),
+            "size_bytes": csv_file.stat().st_size,
+            "size_mb": round(csv_file.stat().st_size / (1024 * 1024), 2),
+            "hash": get_file_hash(csv_file),
+        }
+
+        # Читаем для проверки колонок
+        df = read_csv_safe(csv_file, nrows=5)
+        df.columns = df.columns.str.strip()
+
+        # Подсчёт строк
+        row_count = count_lines_safe(csv_file)
+
+        file_info["row_count"] = row_count
+        file_info["columns"] = list(df.columns)
+        total_rows += row_count
+
+        # Определяем день недели из имени файла
+        day = extract_day_from_filename(csv_file.name)
+        file_info["day"] = day
+
+        # Проверяем консистентность колонок
+        if all_columns is None:
+            all_columns = set(df.columns)
+        else:
+            if set(df.columns) != all_columns:
+                file_info["column_mismatch"] = True
+
+        files_info.append(file_info)
+
+    # Формируем манифест
     manifest = {
-        "raw_dir": str(raw_dir),
-        "generated_at": pd.Timestamp.utcnow().isoformat(),
-        "files": [r.__dict__ for r in rows],
-        "total_files": len(rows),
-        "total_rows": sum(r.rows for r in rows if r.rows is not None),
-        "total_size_bytes": sum(r.size_bytes for r in rows),
+        "created_at": datetime.now().isoformat(),
+        "source": str(raw_path),
+        "total_files": len(csv_files),
+        "total_rows": total_rows,
+        "columns": list(all_columns) if all_columns else [],
+        "column_count": len(all_columns) if all_columns else 0,
+        "files": files_info,
     }
 
-    ensure_dir(out_json.parent)
-    write_json(out_json, manifest)
+    # Сохраняем
+    manifest_path = output_path / "manifest.json"
+    with open(manifest_path, 'w', encoding='utf-8') as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
 
-    if out_csv is not None:
-        ensure_dir(out_csv.parent)
-        pd.DataFrame([r.__dict__ for r in rows]).to_csv(out_csv, index=False)
+    print(f"\n✅ Manifest saved to: {manifest_path}")
+    print(f"   Total files: {manifest['total_files']}")
+    print(f"   Total rows: {manifest['total_rows']:,}")
 
     return manifest
+
+
+def extract_day_from_filename(filename: str) -> str:
+    """Извлечь день недели из имени файла"""
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    filename_lower = filename.lower()
+
+    for day in days:
+        if day.lower() in filename_lower:
+            return day
+
+    return "Unknown"
+
+
+def load_manifest(manifest_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Загрузить манифест"""
+    if manifest_path is None:
+        config = load_config()
+        root = get_project_root()
+        manifest_path = root / config["paths"]["interim_data"] / "manifest.json"
+
+    with open(manifest_path, 'r', encoding='utf-8') as f:
+        return json.load(f)

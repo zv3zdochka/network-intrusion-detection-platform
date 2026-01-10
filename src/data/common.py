@@ -1,106 +1,76 @@
-from __future__ import annotations
+"""
+Общие утилиты для работы с данными
+"""
 
-import json
-import re
+import logging
+import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple, TextIO
+from typing import Any, Dict, Optional
 
-import numpy as np
-import pandas as pd
+import yaml
+
+
+def get_project_root() -> Path:
+    """Получить корневую директорию проекта"""
+    current = Path(__file__).resolve()
+    # Ищем корень по наличию configs или run_data_pipeline.py
+    for parent in current.parents:
+        if (parent / "configs").exists() or (parent / "run_data_pipeline.py").exists():
+            return parent
+    return current.parent.parent.parent
+
+
+def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """Загрузить конфигурацию из YAML файла"""
+    if config_path is None:
+        config_path = get_project_root() / "configs" / "data_pipeline.yaml"
+    else:
+        config_path = Path(config_path)
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+
+    return config
+
+
+def setup_logging(level: str = "INFO", log_format: Optional[str] = None) -> logging.Logger:
+    """Настроить логирование"""
+    if log_format is None:
+        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+    logging.basicConfig(
+        level=getattr(logging, level.upper()),
+        format=log_format,
+        handlers=[
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+
+    logger = logging.getLogger("DataPipeline")
+    return logger
 
 
 def ensure_dir(path: Path) -> Path:
+    """Создать директорию если не существует"""
+    path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def slugify_column(name: str) -> str:
-    """
-    Make a safe column name:
-    - normalize common whitespace (incl. NBSP)
-    - strip
-    - lower
-    - replace non-alnum with underscore
-    - collapse underscores
-    """
-    s = (name or "")
-    # Some CICIDS files contain non-breaking spaces in headers.
-    s = s.replace("\u00a0", " ").strip().lower()
-    s = re.sub(r"[^a-z0-9]+", "_", s)
-    s = re.sub(r"_+", "_", s).strip("_")
-    return s or "col"
+def get_file_hash(file_path: Path) -> str:
+    """Получить хэш файла для проверки целостности"""
+    import xxhash
+
+    hasher = xxhash.xxh64()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
-def make_unique(names: List[str]) -> List[str]:
-    """
-    Ensure all column names are unique and stable.
-    If duplicates exist, append __dupN.
-    """
-    seen: Dict[str, int] = {}
-    out: List[str] = []
-    for n in names:
-        base = n
-        if base not in seen:
-            seen[base] = 0
-            out.append(base)
-        else:
-            seen[base] += 1
-            out.append(f"{base}__dup{seen[base]}")
-    return out
-
-
-def normalize_label(x: str) -> str:
-    """Normalize raw CICIDS label strings.
-
-    The CICIDS-2017 CSVs are often encoded as cp1252 and sometimes include
-    an en dash between tokens (commonly seen as 'Web Attack – XSS').
-    If read with the wrong encoding, that dash may become the replacement
-    character (\uFFFD). We normalize these cases to a simple hyphen.
-
-    Note: keep this function *pure* and safe to call on any scalar.
-    """
-    if x is None:
-        return ""
-    s = str(x).strip()
-
-    # Normalize various dash / replacement artefacts
-    s = s.replace("\uFFFD", "-")  # replacement char
-    s = s.replace("�", "-")  # sometimes appears in terminal/fonts
-    s = s.replace("–", "-").replace("—", "-")  # en/em dash
-
-    # Normalize spacing around hyphens and collapse whitespace
-    s = re.sub(r"\s*-\s*", " - ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-
-    return s
-
-
-def replace_inf(df: pd.DataFrame, cols: Iterable[str]) -> None:
-    df[list(cols)] = df[list(cols)].replace([np.inf, -np.inf], np.nan)
-
-
-def coerce_numeric(df: pd.DataFrame, cols: Iterable[str], downcast_float32: bool = True) -> None:
-    for c in cols:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-        # Downcast only floats; keep ints if possible
-        if downcast_float32:
-            # pandas will convert to float64 if NaN present; we downcast to float32
-            if pd.api.types.is_float_dtype(df[c]):
-                df[c] = df[c].astype("float32")
-
-
-def read_yaml(path: Path) -> dict:
-    try:
-        import yaml  # type: ignore
-    except Exception as e:
-        raise RuntimeError(
-            "PyYAML is required to read configs/data_pipeline.yaml. Install with: pip install pyyaml"
-        ) from e
-    with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
-def write_json(path: Path, obj: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
+def format_number(n: int) -> str:
+    """Форматировать число с разделителями"""
+    return f"{n:,}"

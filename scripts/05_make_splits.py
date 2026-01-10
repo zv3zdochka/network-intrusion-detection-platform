@@ -1,24 +1,34 @@
+#!/usr/bin/env python3
+"""
+Скрипт разбиения на train/val/test
+"""
+
+import sys
 from pathlib import Path
-import argparse
-from src.data.splits import make_split_by_file_prefix
 
+import pandas as pd
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--processed-dataset-dir", default="data/processed/dataset")
-    ap.add_argument("--out-dir", default="data/processed/splits")
-    ap.add_argument("--train-prefixes", nargs="*", default=["Monday", "Tuesday", "Wednesday", "Thursday"])
-    ap.add_argument("--val-prefixes", nargs="*", default=[])
-    ap.add_argument("--test-prefixes", nargs="*", default=["Friday"])
-    args = ap.parse_args()
-    make_split_by_file_prefix(
-        Path(args.processed_dataset_dir),
-        Path(args.out_dir),
-        train_prefixes=args.train_prefixes,
-        val_prefixes=args.val_prefixes,
-        test_prefixes=args.test_prefixes,
-    )
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from src.data import load_config, create_splits, save_splits
+from src.data.common import get_project_root
 
 if __name__ == "__main__":
-    main()
+    config = load_config()
+    root = get_project_root()
+
+    print("Loading processed data...")
+    data_path = root / config["paths"]["processed_data"] / "processed_data.parquet"
+    df = pd.read_parquet(data_path)
+
+    print(f"Loaded {len(df):,} rows")
+
+    print("\nCreating splits...")
+    splits = create_splits(df, config)
+
+    print("\nSaving splits...")
+    saved = save_splits(splits, config)
+
+    print(f"\n✅ All done!")
+    for name, path in saved.items():
+        print(f"   {name}: {path}")

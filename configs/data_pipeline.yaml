@@ -1,48 +1,97 @@
-# Data pipeline configuration (CICIDS-2017 / TrafficLabelling CSV)
+# ============================================
+# Конфигурация пайплайна обработки данных
+# CIC-IDS-2017
+# ============================================
+
+# Пути
 paths:
-  raw_dir: data/raw/CICIDS-2017/TrafficLabelling
-  interim_dir: data/interim
-  processed_dir: data/processed
-  reports_dir: reports
+  raw_data: "data/raw/CICIDS-2017/TrafficLabelling"
+  interim_data: "data/interim"
+  processed_data: "data/processed"
+  reports: "reports"
+  artifacts: "artifacts"
 
-data:
-  # Timestamp column in CICFlowMeter exports
-  timestamp_col: Timestamp
-  label_col: Label
+# Параметры загрузки
+ingestion:
+  encoding: "utf-8"
+  drop_columns:
+    - "Flow ID"
+    - "Source IP"
+    - "Destination IP"
+    - "Timestamp"
+  target_column: "Label"
 
-  # Columns that are usually considered metadata (kept for analysis/UI, not fed to model by default)
-  meta_cols:
-    - Flow ID
-    - Source IP
-    - Source Port
-    - Destination IP
-    - Destination Port
-    - Protocol
-    - Timestamp
+# Параметры очистки
+cleaning:
+  remove_empty_labels: true
+  inf_replacement: "nan"
+  nan_strategy: "median"
+  remove_duplicates: true
+  clip_outliers: true
+  clip_lower_percentile: 0.001
+  clip_upper_percentile: 0.999
 
-  # If true, convert non-meta, non-label columns to numeric (coerce errors to NaN)
-  coerce_numeric: true
+# Маппинг лейблов
+labels:
+  binary_mapping:
+    "BENIGN": 0
+    "default": 1
+  multiclass_mapping:
+    "BENIGN": 0
+    "FTP-Patator": 1
+    "SSH-Patator": 2
+    "DoS slowloris": 3
+    "DoS Slowhttptest": 4
+    "DoS Hulk": 5
+    "DoS GoldenEye": 6
+    "Heartbleed": 7
+    "Web Attack – Brute Force": 8
+    "Web Attack – XSS": 9
+    "Web Attack – Sql Injection": 10
+    "Infiltration": 11
+    "Bot": 12
+    "PortScan": 13
+    "DDoS": 14
 
-  # Replace +/-inf with NaN
-  replace_infinite: true
+# Препроцессинг
+preprocessing:
+  scaler: "robust"
+  save_preprocessor: true
 
-  # Downcast floats to float32 to save space
-  downcast_float32: true
+# ============================================
+# ИЗМЕНЕНО: Stratified Random Split
+# ============================================
+splitting:
+  # Стратегия: "stratified" (рекомендуется) или "temporal"
+  strategy: "stratified"
+  # Размеры
+  test_size: 0.15
+  val_size: 0.15
+  # Random seed для воспроизводимости
+  random_state: 42
+  # Стратификация по бинарному классу
+  stratify: true
+  stratify_column: "label_binary"
+  # Temporal split (если strategy: temporal)
+  temporal_mapping:
+    train:
+      - "Monday"
+      - "Tuesday"
+      - "Wednesday"
+    val:
+      - "Thursday"
+    test:
+      - "Friday"
 
-  # Normalize label strings (strip, collapse spaces)
-  normalize_labels: true
+# EDA
+eda:
+  max_features_corr: 30
+  top_features: 20
+  sample_size: 100000
+  # Отключаем лишние логи kaleido
+  suppress_kaleido_logs: true
 
-ingest:
-  chunksize: 200000
-  output_format: parquet
-
-audit:
-  # Sample size for heavy computations (correlation, percentile summaries)
-  sample_rows: 100000
-  max_corr_features: 40
-
-splits:
-  by_file_prefix:
-    train_prefixes: [ "Monday", "Tuesday", "Wednesday", "Thursday" ]
-    val_prefixes: [ ]
-    test_prefixes: [ "Friday" ]
+# Логирование
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(levelname)s - %(message)s"
