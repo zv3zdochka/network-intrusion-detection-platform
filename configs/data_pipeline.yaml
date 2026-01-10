@@ -1,9 +1,9 @@
 # ============================================
-# Конфигурация пайплайна обработки данных
+# Data Processing Pipeline Configuration
 # CIC-IDS-2017
 # ============================================
 
-# Пути
+# Paths
 paths:
   raw_data: "data/raw/CICIDS-2017/TrafficLabelling"
   interim_data: "data/interim"
@@ -11,7 +11,7 @@ paths:
   reports: "reports"
   artifacts: "artifacts"
 
-# Параметры загрузки
+# Ingestion settings
 ingestion:
   encoding: "utf-8"
   drop_columns:
@@ -21,7 +21,7 @@ ingestion:
     - "Timestamp"
   target_column: "Label"
 
-# Параметры очистки
+# Cleaning settings
 cleaning:
   remove_empty_labels: true
   inf_replacement: "nan"
@@ -31,7 +31,7 @@ cleaning:
   clip_lower_percentile: 0.001
   clip_upper_percentile: 0.999
 
-# Маппинг лейблов
+# Label mapping
 labels:
   binary_mapping:
     "BENIGN": 0
@@ -53,26 +53,26 @@ labels:
     "PortScan": 13
     "DDoS": 14
 
-# Препроцессинг
+# Preprocessing
 preprocessing:
   scaler: "robust"
   save_preprocessor: true
 
 # ============================================
-# ИЗМЕНЕНО: Stratified Random Split
+# UPDATED: Stratified Random Split
 # ============================================
 splitting:
-  # Стратегия: "stratified" (рекомендуется) или "temporal"
+  # Strategy: "stratified" (recommended) or "temporal"
   strategy: "stratified"
-  # Размеры
+  # Split sizes
   test_size: 0.15
   val_size: 0.15
-  # Random seed для воспроизводимости
+  # Random seed for reproducibility
   random_state: 42
-  # Стратификация по бинарному классу
+  # Stratify by the binary class
   stratify: true
   stratify_column: "label_binary"
-  # Temporal split (если strategy: temporal)
+  # Temporal split (only if strategy: temporal)
   temporal_mapping:
     train:
       - "Monday"
@@ -88,10 +88,10 @@ eda:
   max_features_corr: 30
   top_features: 20
   sample_size: 100000
-  # Отключаем лишние логи kaleido
+  # Disable noisy kaleido logs
   suppress_kaleido_logs: true
 
-# Логирование
+# Logging
 logging:
   level: "INFO"
   format: "%(asctime)s - %(levelname)s - %(message)s"

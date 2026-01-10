@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Скрипт аудита и EDA
+Audit and EDA runner script.
 """
 
 import sys
 from pathlib import Path
 
+# Add the project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data import load_config, run_audit, run_eda, generate_report
@@ -17,13 +18,13 @@ if __name__ == "__main__":
     print("Loading bronze data...")
     df = load_bronze_data(config)
 
-    print("\nRunning audit...")
+    print("Running audit...")
     audit_results = run_audit(df, config)
 
-    print("\nRunning EDA...")
+    print("Running EDA...")
     eda_files = run_eda(df, config)
 
-    print("\nGenerating report...")
+    print("Generating report...")
     report_path = generate_report(audit_results, eda_files, config)
 
-    print(f"\n✅ All done! Report: {report_path}")
+    print(f"Completed successfully. Report saved to: {report_path}")

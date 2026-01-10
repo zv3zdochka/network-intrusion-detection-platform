@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Скрипт разбиения на train/val/test
+Train/validation/test split creation script.
 """
 
 import sys
@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
+# Add the project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data import load_config, create_splits, save_splits
@@ -21,14 +22,14 @@ if __name__ == "__main__":
     data_path = root / config["paths"]["processed_data"] / "processed_data.parquet"
     df = pd.read_parquet(data_path)
 
-    print(f"Loaded {len(df):,} rows")
+    print(f"Loaded {len(df):,} rows.")
 
-    print("\nCreating splits...")
+    print("Creating splits...")
     splits = create_splits(df, config)
 
-    print("\nSaving splits...")
+    print("Saving splits...")
     saved = save_splits(splits, config)
 
-    print(f"\n✅ All done!")
+    print("Completed successfully.")
     for name, path in saved.items():
-        print(f"   {name}: {path}")
+        print(f"{name}: {path}")
