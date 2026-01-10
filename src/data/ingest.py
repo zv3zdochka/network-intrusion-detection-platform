@@ -1,5 +1,5 @@
 """
-Загрузка и объединение сырых данных
+Raw data ingestion and merge utilities.
 """
 
 from pathlib import Path
@@ -12,18 +12,17 @@ from tqdm import tqdm
 from .common import get_project_root, load_config, ensure_dir
 from .manifest import load_manifest, extract_day_from_filename
 
-
-# Список кодировок для попытки чтения
+# Encodings to try when reading CSV files
 ENCODINGS_TO_TRY = ['utf-8', 'cp1252', 'latin-1', 'iso-8859-1']
 
 
 def read_csv_with_encoding(file_path: Path, **kwargs) -> pd.DataFrame:
     """
-    Попытка прочитать CSV с разными кодировками
+    Attempt to read a CSV file using a list of common encodings.
 
     Args:
-        file_path: Путь к файлу
-        **kwargs: Дополнительные параметры для pd.read_csv
+        file_path: Path to the CSV file
+        **kwargs: Additional arguments passed to pd.read_csv
 
     Returns:
         DataFrame
@@ -43,10 +42,10 @@ def read_csv_with_encoding(file_path: Path, **kwargs) -> pd.DataFrame:
             last_error = e
             continue
         except Exception as e:
-            # Другие ошибки пробрасываем сразу
+            # Re-raise other errors immediately
             raise e
 
-    # Если ничего не сработало, пробуем с errors='replace'
+    # If none worked, try utf-8 with replacement characters
     try:
         df = pd.read_csv(
             file_path,
@@ -55,25 +54,25 @@ def read_csv_with_encoding(file_path: Path, **kwargs) -> pd.DataFrame:
             low_memory=False,
             **kwargs
         )
-        print(f"   ⚠️ {file_path.name}: read with replacement characters")
+        print(f"{file_path.name}: loaded with replacement characters (encoding fallback).")
         return df
     except Exception:
         raise last_error
 
 
 def load_raw_data(
-    config: Optional[Dict[str, Any]] = None,
-    sample_frac: Optional[float] = None
+        config: Optional[Dict[str, Any]] = None,
+        sample_frac: Optional[float] = None
 ) -> pd.DataFrame:
     """
-    Загрузить все сырые CSV файлы и объединить
+    Load all raw CSV files and concatenate into a single DataFrame.
 
     Args:
-        config: Конфигурация
-        sample_frac: Доля сэмплирования (для отладки)
+        config: Configuration
+        sample_frac: Sampling fraction (useful for debugging)
 
     Returns:
-        Объединённый DataFrame
+        Combined DataFrame
     """
     if config is None:
         config = load_config()
@@ -92,10 +91,10 @@ def load_raw_data(
         try:
             df = read_csv_with_encoding(csv_file)
 
-            # Очищаем названия колонок
+            # Normalize column names
             df.columns = df.columns.str.strip()
 
-            # Добавляем информацию об источнике
+            # Add source metadata
             df['_source_file'] = csv_file.name
             df['_day'] = extract_day_from_filename(csv_file.name)
 
@@ -105,26 +104,25 @@ def load_raw_data(
             dfs.append(df)
 
         except Exception as e:
-            print(f"\n❌ Error reading {csv_file.name}: {e}")
+            print(f"Error reading {csv_file.name}: {e}")
             raise
 
-    # Объединяем
     combined = pd.concat(dfs, ignore_index=True)
 
-    print(f"\n✅ Loaded {len(combined):,} rows from {len(csv_files)} files")
+    print(f"Loaded {len(combined):,} rows from {len(csv_files)} files.")
 
     return combined
 
 
 def merge_csv_files(
-    config: Optional[Dict[str, Any]] = None,
-    output_path: Optional[Path] = None
+        config: Optional[Dict[str, Any]] = None,
+        output_path: Optional[Path] = None
 ) -> Path:
     """
-    Объединить все CSV в один файл (bronze layer)
+    Merge all raw CSV files into a single file (bronze layer).
 
     Returns:
-        Путь к объединённому файлу
+        Path to the merged file
     """
     if config is None:
         config = load_config()
@@ -136,21 +134,20 @@ def merge_csv_files(
 
     ensure_dir(output_path)
 
-    # Загружаем данные
     df = load_raw_data(config)
 
-    # Сохраняем в parquet (эффективнее чем CSV)
+    # Save as parquet (more efficient than CSV)
     output_file = output_path / "bronze_combined.parquet"
     df.to_parquet(output_file, index=False, engine='pyarrow')
 
-    print(f"✅ Saved bronze data to: {output_file}")
-    print(f"   Size: {output_file.stat().st_size / (1024*1024):.1f} MB")
+    print(f"Bronze data saved to: {output_file}")
+    print(f"Size: {output_file.stat().st_size / (1024 * 1024):.1f} MB")
 
     return output_file
 
 
 def load_bronze_data(config: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
-    """Загрузить bronze данные из parquet"""
+    """Load bronze data from parquet."""
     if config is None:
         config = load_config()
 
@@ -160,7 +157,7 @@ def load_bronze_data(config: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
     if not bronze_path.exists():
         raise FileNotFoundError(
             f"Bronze data not found: {bronze_path}\n"
-            "Run ingestion step first."
+            "Run the ingestion step first."
         )
 
     return pd.read_parquet(bronze_path)

@@ -11,7 +11,7 @@ from .splits import create_splits, save_splits
 
 __all__ = [
     "load_config",
-    "setup_logging", 
+    "setup_logging",
     "get_project_root",
     "create_manifest",
     "load_manifest",

@@ -1,5 +1,5 @@
 """
-Очистка данных, Feature Engineering и препроцессинг
+Data cleaning, feature engineering, and preprocessing.
 """
 
 import json
@@ -16,14 +16,14 @@ from .ingest import load_bronze_data
 
 
 def create_feature_schema(
-    df: pd.DataFrame,
-    config: Optional[Dict[str, Any]] = None
+        df: pd.DataFrame,
+        config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Создать схему признаков (feature contract)
+    Create a feature schema (feature contract).
 
     Returns:
-        Словарь со схемой признаков
+        A dictionary containing the feature schema.
     """
     if config is None:
         config = load_config()
@@ -31,27 +31,26 @@ def create_feature_schema(
     drop_cols = config["ingestion"]["drop_columns"]
     target_col = config["ingestion"]["target_column"]
 
-    # Все колонки
+    # All columns
     all_cols = df.columns.tolist()
 
-    # Служебные колонки (добавленные нами)
+    # Internal metadata columns (added by this pipeline)
     meta_cols = [c for c in all_cols if c.startswith('_')]
 
-    # Обработка дублирующегося столбца Fwd Header Length
-    # Переименовываем .1 версию
+    # Handle duplicated columns (e.g., "Fwd Header Length.1")
     duplicate_cols = [c for c in all_cols if '.1' in c]
 
-    # Колонки для удаления
+    # Columns to drop
     cols_to_drop = drop_cols + meta_cols + [target_col] + duplicate_cols
 
-    # Признаки
+    # Feature columns
     feature_cols = [c for c in all_cols if c not in cols_to_drop]
 
-    # Типы признаков
+    # Feature types
     numeric_features = df[feature_cols].select_dtypes(include=[np.number]).columns.tolist()
     categorical_features = df[feature_cols].select_dtypes(exclude=[np.number]).columns.tolist()
 
-    # Проверяем на дублирующиеся названия
+    # Ensure unique feature names (defensive, in case of duplicates)
     seen = set()
     unique_numeric = []
     for col in numeric_features:
@@ -59,7 +58,7 @@ def create_feature_schema(
             seen.add(col)
             unique_numeric.append(col)
 
-    # Статистики для каждого признака
+    # Basic statistics for each numeric feature
     feature_stats = {}
     for col in unique_numeric:
         valid_data = df[col].replace([np.inf, -np.inf], np.nan).dropna()
@@ -93,20 +92,20 @@ def create_feature_schema(
 
 
 def clean_data(
-    df: Optional[pd.DataFrame] = None,
-    config: Optional[Dict[str, Any]] = None,
-    schema: Optional[Dict[str, Any]] = None
+        df: Optional[pd.DataFrame] = None,
+        config: Optional[Dict[str, Any]] = None,
+        schema: Optional[Dict[str, Any]] = None
 ) -> pd.DataFrame:
     """
-    Очистить данные
+    Clean the data.
 
-    Шаги:
-    1. Удаление полностью пустых/битых строк
-    2. Удаление дубликатов
-    3. Удаление дублирующихся колонок
-    4. Обработка Inf
-    5. Обработка NaN
-    6. Клиппинг выбросов
+    Steps:
+    1. Remove fully empty/broken rows
+    2. Remove duplicates
+    3. Drop duplicated columns
+    4. Handle Inf
+    5. Handle NaN
+    6. Clip outliers
     """
     if config is None:
         config = load_config()
@@ -114,51 +113,51 @@ def clean_data(
     if df is None:
         df = load_bronze_data(config)
 
-    # ВАЖНО: создаём копию чтобы избежать SettingWithCopyWarning
+    # Important: work on a copy to avoid SettingWithCopyWarning
     df = df.copy()
 
     cleaning_config = config["cleaning"]
     target_col = config["ingestion"]["target_column"]
 
-    print("="*60)
-    print("ОЧИСТКА ДАННЫХ")
-    print("="*60)
+    print("=" * 60)
+    print("DATA CLEANING")
+    print("=" * 60)
 
     initial_rows = len(df)
-    print(f"\n📊 Исходных строк: {initial_rows:,}")
+    print(f"Initial rows: {initial_rows:,}")
 
-    # 0. Удаление полностью пустых строк (где даже Label пустой)
+    # 0. Drop fully empty rows (where even the Label is missing)
     empty_mask = df[target_col].isna()
     if empty_mask.sum() > 0:
-        print(f"\n📊 Удаление пустых строк (Label is NaN)...")
-        print(f"   Найдено пустых строк: {empty_mask.sum():,}")
+        print("Dropping rows with empty labels (Label is NaN)...")
+        print(f"Found empty-label rows: {empty_mask.sum():,}")
         df = df[~empty_mask].copy()
-        print(f"   После удаления: {len(df):,}")
+        print(f"Rows after drop: {len(df):,}")
 
-    # 1. Удаление дубликатов
+    # 1. Remove duplicates
     if cleaning_config["remove_duplicates"]:
         before_dup = len(df)
-        # Убираем мета-колонки при проверке дубликатов
+        # Exclude pipeline metadata columns from duplicate checking
         check_cols = [c for c in df.columns if not c.startswith('_')]
         df = df.drop_duplicates(subset=check_cols, keep='first').copy()
         removed = before_dup - len(df)
-        print(f"\n📊 Удаление дубликатов...")
-        print(f"   Удалено: {removed:,}")
-        print(f"   Осталось: {len(df):,}")
+        print("Removing duplicates...")
+        print(f"Removed: {removed:,}")
+        print(f"Remaining: {len(df):,}")
 
-    # 2. Удаление дублирующихся колонок (например, Fwd Header Length.1)
+    # 2. Drop duplicated columns (e.g., "Fwd Header Length.1")
     dup_cols = [c for c in df.columns if '.1' in c]
     if dup_cols:
-        print(f"\n📊 Удаление дублирующихся колонок: {dup_cols}")
+        print(f"Dropping duplicated columns: {dup_cols}")
         df = df.drop(columns=dup_cols)
 
-    # Получаем числовые колонки
+    # Numeric columns (excluding metadata columns)
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     numeric_cols = [c for c in numeric_cols if not c.startswith('_')]
 
-    # 3. Обработка Inf
+    # 3. Handle Inf
     inf_replacement = cleaning_config["inf_replacement"]
-    print(f"\n📊 Обработка Inf (стратегия: {inf_replacement})...")
+    print(f"Handling Inf (strategy: {inf_replacement})...")
 
     total_inf_replaced = 0
     for col in numeric_cols:
@@ -183,11 +182,11 @@ def clean_data(
                     median_val = valid_data.median()
                     df.loc[inf_mask, col] = median_val
 
-    print(f"   Заменено Inf значений: {total_inf_replaced:,}")
+    print(f"Inf values replaced: {total_inf_replaced:,}")
 
-    # 4. Обработка NaN
+    # 4. Handle NaN
     nan_strategy = cleaning_config["nan_strategy"]
-    print(f"\n📊 Обработка NaN (стратегия: {nan_strategy})...")
+    print(f"Handling NaN (strategy: {nan_strategy})...")
 
     nan_before = df[numeric_cols].isna().sum().sum()
 
@@ -196,7 +195,7 @@ def clean_data(
             nan_count = df[col].isna().sum()
             if nan_count > 0:
                 median_val = df[col].median()
-                # Если медиана тоже NaN, используем 0
+                # If the median is also NaN, fall back to 0
                 if pd.isna(median_val):
                     median_val = 0
                 df.loc[df[col].isna(), col] = median_val
@@ -215,50 +214,52 @@ def clean_data(
         df = df.dropna(subset=numeric_cols).copy()
 
     nan_after = df[numeric_cols].isna().sum().sum()
-    print(f"   NaN до: {nan_before:,}, после: {nan_after:,}")
+    print(f"NaN before: {nan_before:,}, after: {nan_after:,}")
 
-    # 5. Клиппинг выбросов
+    # 5. Outlier clipping
     if cleaning_config["clip_outliers"]:
         lower_pct = cleaning_config["clip_lower_percentile"]
         upper_pct = cleaning_config["clip_upper_percentile"]
-        print(f"\n📊 Клиппинг выбросов ({lower_pct}-{upper_pct} percentile)...")
+        print(f"Clipping outliers ({lower_pct}-{upper_pct} percentile)...")
 
         clipped_cols = 0
         for col in numeric_cols:
             lower = df[col].quantile(lower_pct)
             upper = df[col].quantile(upper_pct)
 
-            # Проверяем что границы валидны
+            # Ensure valid bounds
             if pd.notna(lower) and pd.notna(upper) and lower < upper:
                 before_clip = ((df[col] < lower) | (df[col] > upper)).sum()
                 if before_clip > 0:
                     df.loc[:, col] = df[col].clip(lower, upper)
                     clipped_cols += 1
 
-        print(f"   Обработано колонок: {clipped_cols}")
+        print(f"Columns clipped: {clipped_cols}")
 
-    print(f"\n✅ Итого строк после очистки: {len(df):,}")
-    print(f"   Удалено всего: {initial_rows - len(df):,} ({100*(initial_rows - len(df))/initial_rows:.1f}%)")
+    removed_total = initial_rows - len(df)
+    removed_pct = 100 * removed_total / initial_rows if initial_rows > 0 else 0.0
+    print(f"Final rows after cleaning: {len(df):,}")
+    print(f"Total removed: {removed_total:,} ({removed_pct:.1f}%)")
 
     return df
 
 
 def preprocess_data(
-    df: pd.DataFrame,
-    config: Optional[Dict[str, Any]] = None,
-    schema: Optional[Dict[str, Any]] = None,
-    fit: bool = True,
-    preprocessor: Optional[Any] = None
+        df: pd.DataFrame,
+        config: Optional[Dict[str, Any]] = None,
+        schema: Optional[Dict[str, Any]] = None,
+        fit: bool = True,
+        preprocessor: Optional[Any] = None
 ) -> Tuple[pd.DataFrame, Dict[str, Any], Any]:
     """
-    Препроцессинг данных: скейлинг и кодирование
+    Preprocess data: scaling and label encoding.
 
     Args:
         df: DataFrame
-        config: Конфигурация
-        schema: Схема признаков
-        fit: Обучать ли препроцессор (True для train)
-        preprocessor: Готовый препроцессор (для val/test)
+        config: Configuration
+        schema: Feature schema
+        fit: Whether to fit the preprocessor (True for train)
+        preprocessor: Pre-fitted preprocessor (for val/test)
 
     Returns:
         (processed_df, label_mapping, preprocessor)
@@ -266,30 +267,30 @@ def preprocess_data(
     if config is None:
         config = load_config()
 
-    # Создаём копию
+    # Work on a copy
     df = df.copy()
 
     if schema is None:
         schema = create_feature_schema(df, config)
 
-    print("\n" + "="*60)
-    print("ПРЕПРОЦЕССИНГ")
-    print("="*60)
+    print("\n" + "=" * 60)
+    print("PREPROCESSING")
+    print("=" * 60)
 
     target_col = config["ingestion"]["target_column"]
     feature_cols = schema["feature_columns"]
 
-    # Фильтруем только существующие колонки
+    # Keep only existing columns
     feature_cols = [c for c in feature_cols if c in df.columns]
 
     preprocessing_config = config["preprocessing"]
     labels_config = config["labels"]
 
-    # 1. Нормализация названий классов (убираем лишние пробелы, приводим к единому виду)
-    print("\n📊 Нормализация меток...")
+    # 1. Normalize label strings (strip whitespace, unify variants)
+    print("Normalizing labels...")
     df[target_col] = df[target_col].str.strip()
 
-    # Унификация названий Web Attack (разные варианты написания)
+    # Unify "Web Attack" naming variants
     label_fixes = {
         'Web Attack Brute Force': 'Web Attack – Brute Force',
         'Web Attack XSS': 'Web Attack – XSS',
@@ -300,25 +301,23 @@ def preprocess_data(
     }
     df[target_col] = df[target_col].replace(label_fixes)
 
-    print(f"   Уникальных классов: {df[target_col].nunique()}")
+    print(f"Unique classes: {df[target_col].nunique()}")
 
-    # 2. Создание бинарных и мультикласс меток
-    print("\n📊 Создание меток...")
+    # 2. Create binary and multiclass labels
+    print("Creating labels...")
 
-    # Бинарная классификация
     binary_mapping = labels_config["binary_mapping"]
     df["label_binary"] = df[target_col].apply(
         lambda x: binary_mapping.get(x, binary_mapping["default"])
     )
 
-    # Мультиклассовая классификация
     multiclass_mapping = labels_config["multiclass_mapping"]
     max_class = max(multiclass_mapping.values())
 
     def get_multiclass_label(x):
         if x in multiclass_mapping:
             return multiclass_mapping[x]
-        # Пробуем найти частичное совпадение
+        # Attempt partial match
         for key, val in multiclass_mapping.items():
             if key.lower() in x.lower() or x.lower() in key.lower():
                 return val
@@ -326,11 +325,11 @@ def preprocess_data(
 
     df["label_multiclass"] = df[target_col].apply(get_multiclass_label)
 
-    # Проверяем unknown классы
+    # Unknown class check
     unknown_count = (df["label_multiclass"] == max_class + 1).sum()
     if unknown_count > 0:
         unknown_labels = df[df["label_multiclass"] == max_class + 1][target_col].unique()
-        print(f"   ⚠️ Неизвестных классов: {unknown_count} ({unknown_labels[:5]})")
+        print(f"Unknown class rows: {unknown_count} (examples: {unknown_labels[:5]})")
 
     label_mapping = {
         "binary": binary_mapping,
@@ -340,27 +339,25 @@ def preprocess_data(
     }
 
     binary_dist = df['label_binary'].value_counts()
-    print(f"   Binary - Benign: {binary_dist.get(0, 0):,}, Attack: {binary_dist.get(1, 0):,}")
-    print(f"   Multiclass: {df['label_multiclass'].nunique()} unique classes")
+    print(f"Binary distribution - Benign: {binary_dist.get(0, 0):,}, Attack: {binary_dist.get(1, 0):,}")
+    print(f"Multiclass: {df['label_multiclass'].nunique()} unique classes")
 
-    # 3. Проверка на NaN/Inf перед скейлингом
-    print(f"\n📊 Проверка данных перед скейлингом...")
+    # 3. Sanity check before scaling (ensure no Inf/NaN remain)
+    print("Checking data before scaling...")
 
-    # Заменяем оставшиеся проблемные значения
     for col in feature_cols:
-        # Заменяем inf на NaN, затем NaN на 0
+        # Replace inf with NaN, then fill NaN with 0
         df.loc[:, col] = df[col].replace([np.inf, -np.inf], np.nan)
         if df[col].isna().sum() > 0:
             df.loc[:, col] = df[col].fillna(0)
 
     nan_count = df[feature_cols].isna().sum().sum()
     inf_count = sum(((df[col] == np.inf) | (df[col] == -np.inf)).sum() for col in feature_cols)
-    print(f"   NaN: {nan_count}, Inf: {inf_count}")
+    print(f"Remaining NaN: {nan_count}, remaining Inf: {inf_count}")
 
-    # 4. Скейлинг
-    print(f"\n📊 Скейлинг (метод: {preprocessing_config['scaler']})...")
-
+    # 4. Scaling
     scaler_type = preprocessing_config["scaler"]
+    print(f"Scaling (method: {scaler_type})...")
 
     if fit:
         if scaler_type == "standard":
@@ -372,7 +369,6 @@ def preprocess_data(
         else:
             raise ValueError(f"Unknown scaler: {scaler_type}")
 
-        # Обучаем скейлер
         scaled_values = scaler.fit_transform(df[feature_cols])
         df.loc[:, feature_cols] = scaled_values
         preprocessor = {"scaler": scaler, "feature_cols": feature_cols}
@@ -383,26 +379,26 @@ def preprocess_data(
         scaled_values = scaler.transform(df[feature_cols])
         df.loc[:, feature_cols] = scaled_values
 
-    print(f"   Scaled {len(feature_cols)} features")
+    print(f"Scaled features: {len(feature_cols)}")
 
-    # 5. Финальная проверка
-    print(f"\n📊 Финальная проверка...")
-    print(f"   Строк: {len(df):,}")
-    print(f"   Признаков: {len(feature_cols)}")
-    print(f"   Колонок всего: {len(df.columns)}")
+    # 5. Final summary
+    print("Final check...")
+    print(f"Rows: {len(df):,}")
+    print(f"Features: {len(feature_cols)}")
+    print(f"Total columns: {len(df.columns)}")
 
     return df, label_mapping, preprocessor
 
 
 def save_processed_data(
-    df: pd.DataFrame,
-    schema: Dict[str, Any],
-    label_mapping: Dict[str, Any],
-    preprocessor: Any,
-    config: Optional[Dict[str, Any]] = None,
-    output_path: Optional[Path] = None
+        df: pd.DataFrame,
+        schema: Dict[str, Any],
+        label_mapping: Dict[str, Any],
+        preprocessor: Any,
+        config: Optional[Dict[str, Any]] = None,
+        output_path: Optional[Path] = None
 ) -> Dict[str, Path]:
-    """Сохранить обработанные данные и артефакты"""
+    """Save processed data and related artifacts."""
     if config is None:
         config = load_config()
 
@@ -416,32 +412,32 @@ def save_processed_data(
 
     saved_files = {}
 
-    # 1. Данные
+    # 1. Data
     data_path = output_path / "processed_data.parquet"
     df.to_parquet(data_path, index=False)
     saved_files["data"] = data_path
-    print(f"\n💾 Data saved to: {data_path}")
-    print(f"   Size: {data_path.stat().st_size / (1024*1024):.1f} MB")
+    print(f"Data saved to: {data_path}")
+    print(f"Size: {data_path.stat().st_size / (1024 * 1024):.1f} MB")
 
-    # 2. Схема признаков
+    # 2. Feature schema
     schema_path = artifacts_path / "feature_schema.json"
     with open(schema_path, 'w', encoding='utf-8') as f:
         json.dump(schema, f, indent=2, ensure_ascii=False)
     saved_files["schema"] = schema_path
-    print(f"💾 Schema saved to: {schema_path}")
+    print(f"Schema saved to: {schema_path}")
 
-    # 3. Маппинг меток
+    # 3. Label mapping
     labels_path = artifacts_path / "label_mapping.json"
     with open(labels_path, 'w', encoding='utf-8') as f:
         json.dump(label_mapping, f, indent=2, ensure_ascii=False)
     saved_files["labels"] = labels_path
-    print(f"💾 Labels saved to: {labels_path}")
+    print(f"Labels saved to: {labels_path}")
 
-    # 4. Препроцессор
+    # 4. Preprocessor
     if config["preprocessing"]["save_preprocessor"]:
         preprocessor_path = artifacts_path / "preprocessor.joblib"
         joblib.dump(preprocessor, preprocessor_path)
         saved_files["preprocessor"] = preprocessor_path
-        print(f"💾 Preprocessor saved to: {preprocessor_path}")
+        print(f"Preprocessor saved to: {preprocessor_path}")
 
     return saved_files

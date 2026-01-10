@@ -1,5 +1,5 @@
 """
-Создание и управление манифестом данных
+Data manifest creation and management.
 """
 
 import json
@@ -11,13 +11,12 @@ import pandas as pd
 
 from .common import get_project_root, load_config, get_file_hash, ensure_dir
 
-
-# Список кодировок для попытки чтения
+# Encodings to try when reading CSV files
 ENCODINGS_TO_TRY = ['utf-8', 'cp1252', 'latin-1', 'iso-8859-1']
 
 
 def read_csv_safe(file_path: Path, nrows: Optional[int] = None) -> pd.DataFrame:
-    """Безопасное чтение CSV с автоопределением кодировки"""
+    """Safely read a CSV file with automatic encoding fallback."""
     for encoding in ENCODINGS_TO_TRY:
         try:
             df = pd.read_csv(
@@ -30,7 +29,7 @@ def read_csv_safe(file_path: Path, nrows: Optional[int] = None) -> pd.DataFrame:
         except UnicodeDecodeError:
             continue
 
-    # Fallback с заменой символов
+    # Fallback with replacement characters
     return pd.read_csv(
         file_path,
         encoding='utf-8',
@@ -41,30 +40,30 @@ def read_csv_safe(file_path: Path, nrows: Optional[int] = None) -> pd.DataFrame:
 
 
 def count_lines_safe(file_path: Path) -> int:
-    """Подсчёт строк с обработкой кодировки"""
+    """Count data rows with encoding-aware fallback."""
     for encoding in ENCODINGS_TO_TRY:
         try:
             with open(file_path, 'r', encoding=encoding, errors='strict') as f:
-                return sum(1 for _ in f) - 1  # минус заголовок
+                return sum(1 for _ in f) - 1  # subtract header row
         except UnicodeDecodeError:
             continue
 
-    # Fallback с заменой
+    # Fallback with replacement characters
     with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
         return sum(1 for _ in f) - 1
 
 
 def create_manifest(
-    config: Optional[Dict[str, Any]] = None,
-    output_path: Optional[Path] = None
+        config: Optional[Dict[str, Any]] = None,
+        output_path: Optional[Path] = None
 ) -> Dict[str, Any]:
     """
-    Создать манифест исходных данных
+    Create a raw data manifest.
 
-    Манифест содержит:
-    - Список файлов
-    - Размеры и хэши
-    - Базовую статистику
+    The manifest contains:
+    - File list
+    - File sizes and hashes
+    - Basic statistics (row counts, column consistency)
     """
     if config is None:
         config = load_config()
@@ -77,9 +76,7 @@ def create_manifest(
 
     ensure_dir(output_path)
 
-    # Собираем информацию о файлах
     csv_files = sorted(raw_path.glob("*.csv"))
-
     if not csv_files:
         raise FileNotFoundError(f"No CSV files found in {raw_path}")
 
@@ -88,9 +85,8 @@ def create_manifest(
     all_columns = None
 
     for csv_file in csv_files:
-        print(f"Processing: {csv_file.name}...")
+        print(f"Processing: {csv_file.name}")
 
-        # Базовая информация
         file_info = {
             "filename": csv_file.name,
             "path": str(csv_file.relative_to(root)),
@@ -99,22 +95,22 @@ def create_manifest(
             "hash": get_file_hash(csv_file),
         }
 
-        # Читаем для проверки колонок
+        # Read a small sample to validate column names
         df = read_csv_safe(csv_file, nrows=5)
         df.columns = df.columns.str.strip()
 
-        # Подсчёт строк
+        # Count data rows
         row_count = count_lines_safe(csv_file)
 
         file_info["row_count"] = row_count
         file_info["columns"] = list(df.columns)
         total_rows += row_count
 
-        # Определяем день недели из имени файла
+        # Infer day from filename
         day = extract_day_from_filename(csv_file.name)
         file_info["day"] = day
 
-        # Проверяем консистентность колонок
+        # Column consistency check
         if all_columns is None:
             all_columns = set(df.columns)
         else:
@@ -123,7 +119,6 @@ def create_manifest(
 
         files_info.append(file_info)
 
-    # Формируем манифест
     manifest = {
         "created_at": datetime.now().isoformat(),
         "source": str(raw_path),
@@ -134,20 +129,19 @@ def create_manifest(
         "files": files_info,
     }
 
-    # Сохраняем
     manifest_path = output_path / "manifest.json"
     with open(manifest_path, 'w', encoding='utf-8') as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
-    print(f"\n✅ Manifest saved to: {manifest_path}")
-    print(f"   Total files: {manifest['total_files']}")
-    print(f"   Total rows: {manifest['total_rows']:,}")
+    print(f"Manifest saved to: {manifest_path}")
+    print(f"Total files: {manifest['total_files']}")
+    print(f"Total rows: {manifest['total_rows']:,}")
 
     return manifest
 
 
 def extract_day_from_filename(filename: str) -> str:
-    """Извлечь день недели из имени файла"""
+    """Extract weekday name from a dataset filename."""
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     filename_lower = filename.lower()
 
@@ -159,7 +153,7 @@ def extract_day_from_filename(filename: str) -> str:
 
 
 def load_manifest(manifest_path: Optional[Path] = None) -> Dict[str, Any]:
-    """Загрузить манифест"""
+    """Load a manifest JSON file."""
     if manifest_path is None:
         config = load_config()
         root = get_project_root()

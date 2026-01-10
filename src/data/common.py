@@ -1,5 +1,5 @@
 """
-Общие утилиты для работы с данными
+Common utilities for data pipeline operations.
 """
 
 import logging
@@ -11,9 +11,9 @@ import yaml
 
 
 def get_project_root() -> Path:
-    """Получить корневую директорию проекта"""
+    """Return the project root directory."""
     current = Path(__file__).resolve()
-    # Ищем корень по наличию configs или run_data_pipeline.py
+    # Detect the root by presence of "configs" or "run_data_pipeline.py"
     for parent in current.parents:
         if (parent / "configs").exists() or (parent / "run_data_pipeline.py").exists():
             return parent
@@ -21,7 +21,7 @@ def get_project_root() -> Path:
 
 
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
-    """Загрузить конфигурацию из YAML файла"""
+    """Load configuration from a YAML file."""
     if config_path is None:
         config_path = get_project_root() / "configs" / "data_pipeline.yaml"
     else:
@@ -37,7 +37,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
 
 
 def setup_logging(level: str = "INFO", log_format: Optional[str] = None) -> logging.Logger:
-    """Настроить логирование"""
+    """Configure and return a logger instance."""
     if log_format is None:
         log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
@@ -54,14 +54,14 @@ def setup_logging(level: str = "INFO", log_format: Optional[str] = None) -> logg
 
 
 def ensure_dir(path: Path) -> Path:
-    """Создать директорию если не существует"""
+    """Create a directory if it does not exist."""
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def get_file_hash(file_path: Path) -> str:
-    """Получить хэш файла для проверки целостности"""
+    """Compute a file hash (integrity check)."""
     import xxhash
 
     hasher = xxhash.xxh64()
@@ -72,5 +72,5 @@ def get_file_hash(file_path: Path) -> str:
 
 
 def format_number(n: int) -> str:
-    """Форматировать число с разделителями"""
+    """Format an integer with thousands separators."""
     return f"{n:,}"

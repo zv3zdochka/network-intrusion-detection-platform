@@ -1,5 +1,5 @@
 """
-Разбиение данных на train/val/test
+Train/validation/test split utilities.
 """
 
 import json
@@ -14,16 +14,16 @@ from .common import get_project_root, load_config, ensure_dir
 
 
 def create_splits(
-    df: pd.DataFrame,
-    config: Optional[Dict[str, Any]] = None
+        df: pd.DataFrame,
+        config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, pd.DataFrame]:
     """
-    Разбить данные на train/val/test
+    Split data into train/val/test.
 
-    Поддерживает:
-    - stratified: стратифицированное случайное разбиение (рекомендуется)
-    - temporal: разбиение по дням
-    - random: простое случайное разбиение
+    Supported strategies:
+    - stratified: stratified random split (recommended)
+    - temporal: split by day-of-week
+    - random: plain random split
 
     Returns:
         {"train": df_train, "val": df_val, "test": df_test}
@@ -34,10 +34,10 @@ def create_splits(
     split_config = config["splitting"]
     strategy = split_config["strategy"]
 
-    print("="*60)
-    print("РАЗБИЕНИЕ ДАННЫХ")
-    print("="*60)
-    print(f"\n📊 Стратегия: {strategy}")
+    print("=" * 60)
+    print("DATA SPLITTING")
+    print("=" * 60)
+    print(f"Strategy: {strategy}")
 
     if strategy == "temporal":
         splits = _temporal_split(df, split_config)
@@ -46,57 +46,53 @@ def create_splits(
     else:
         raise ValueError(f"Unknown split strategy: {strategy}")
 
-    # Статистика
-    print("\n📊 Результаты разбиения:")
+    print("Split summary:")
     total = len(df)
 
     for name, split_df in splits.items():
         pct = 100 * len(split_df) / total
-        print(f"   {name}: {len(split_df):,} строк ({pct:.1f}%)")
+        print(f"{name}: {len(split_df):,} rows ({pct:.1f}%)")
 
         if "label_binary" in split_df.columns:
             n_benign = (split_df["label_binary"] == 0).sum()
             n_attack = (split_df["label_binary"] == 1).sum()
             pct_benign = 100 * n_benign / len(split_df)
             pct_attack = 100 * n_attack / len(split_df)
-            print(f"      - Benign: {n_benign:,} ({pct_benign:.1f}%)")
-            print(f"      - Attack: {n_attack:,} ({pct_attack:.1f}%)")
+            print(f"  - Benign: {n_benign:,} ({pct_benign:.1f}%)")
+            print(f"  - Attack: {n_attack:,} ({pct_attack:.1f}%)")
 
         if "label_multiclass" in split_df.columns:
             n_classes = split_df["label_multiclass"].nunique()
-            print(f"      - Multiclass: {n_classes} классов")
+            print(f"  - Multiclass: {n_classes} classes")
 
-    # Проверка баланса
     _check_split_balance(splits)
 
     return splits
 
 
 def _stratified_split(
-    df: pd.DataFrame,
-    split_config: Dict[str, Any],
-    config: Dict[str, Any]
+        df: pd.DataFrame,
+        split_config: Dict[str, Any],
+        config: Dict[str, Any]
 ) -> Dict[str, pd.DataFrame]:
-    """Стратифицированное разбиение"""
+    """Perform a stratified (or random) split."""
     test_size = split_config["test_size"]
     val_size = split_config["val_size"]
     random_state = split_config["random_state"]
     stratify = split_config.get("stratify", True)
     stratify_col = split_config.get("stratify_column", "label_binary")
 
-    print(f"   Test size: {test_size}")
-    print(f"   Val size: {val_size}")
-    print(f"   Stratify by: {stratify_col if stratify else 'None'}")
+    print(f"Test size: {test_size}")
+    print(f"Val size: {val_size}")
+    print(f"Stratify by: {stratify_col if stratify else 'None'}")
 
-    # Колонка для стратификации
     if stratify and stratify_col in df.columns:
         stratify_data = df[stratify_col]
     else:
         stratify_data = None
         if stratify:
-            print(f"   ⚠️ Column '{stratify_col}' not found, using random split")
+            print(f"Column '{stratify_col}' not found; falling back to random split.")
 
-    # Сначала отделяем test
     df_temp, df_test = train_test_split(
         df,
         test_size=test_size,
@@ -104,7 +100,6 @@ def _stratified_split(
         stratify=stratify_data
     )
 
-    # Затем val от оставшегося
     val_adjusted = val_size / (1 - test_size)
 
     if stratify and stratify_col in df_temp.columns:
@@ -127,10 +122,10 @@ def _stratified_split(
 
 
 def _temporal_split(
-    df: pd.DataFrame,
-    split_config: Dict[str, Any]
+        df: pd.DataFrame,
+        split_config: Dict[str, Any]
 ) -> Dict[str, pd.DataFrame]:
-    """Разбиение по дням недели"""
+    """Split by day-of-week."""
     temporal_mapping = split_config["temporal_mapping"]
 
     if "_day" not in df.columns:
@@ -141,14 +136,14 @@ def _temporal_split(
     for split_name, days in temporal_mapping.items():
         mask = df["_day"].isin(days)
         splits[split_name] = df[mask].copy().reset_index(drop=True)
-        print(f"   {split_name}: дни {days} -> {mask.sum():,} строк")
+        print(f"{split_name}: days {days} -> {mask.sum():,} rows")
 
     return splits
 
 
 def _check_split_balance(splits: Dict[str, pd.DataFrame]) -> None:
-    """Проверить баланс классов в сплитах"""
-    print("\n📊 Проверка баланса классов:")
+    """Check class balance across splits."""
+    print("Class balance check:")
 
     attack_ratios = {}
     for name, df in splits.items():
@@ -161,24 +156,24 @@ def _check_split_balance(splits: Dict[str, pd.DataFrame]) -> None:
         max_diff = max(ratios) - min(ratios)
 
         if max_diff < 0.05:
-            print("   ✅ Классы сбалансированы между сплитами")
+            print("Classes are well balanced across splits.")
         elif max_diff < 0.15:
-            print("   ⚠️ Небольшой дисбаланс между сплитами")
+            print("Minor imbalance across splits detected.")
             for name, ratio in attack_ratios.items():
-                print(f"      {name}: {ratio*100:.1f}% атак")
+                print(f"  {name}: {ratio * 100:.1f}% attacks")
         else:
-            print("   🔴 Сильный дисбаланс между сплитами!")
+            print("Significant imbalance across splits detected.")
             for name, ratio in attack_ratios.items():
-                print(f"      {name}: {ratio*100:.1f}% атак")
-            print("   💡 Рекомендуется использовать strategy: stratified")
+                print(f"  {name}: {ratio * 100:.1f}% attacks")
+            print("Recommendation: use strategy: stratified")
 
 
 def save_splits(
-    splits: Dict[str, pd.DataFrame],
-    config: Optional[Dict[str, Any]] = None,
-    output_path: Optional[Path] = None
+        splits: Dict[str, pd.DataFrame],
+        config: Optional[Dict[str, Any]] = None,
+        output_path: Optional[Path] = None
 ) -> Dict[str, Path]:
-    """Сохранить сплиты"""
+    """Save train/val/test splits to parquet along with metadata."""
     if config is None:
         config = load_config()
 
@@ -214,9 +209,8 @@ def save_splits(
                 str(k): int(v) for k, v in multi_dist.items()
             }
 
-        print(f"💾 {name} saved to: {file_path}")
+        print(f"{name} saved to: {file_path}")
 
-    # Сохраняем метаданные сплитов
     meta_path = output_path / "split_metadata.json"
     with open(meta_path, 'w', encoding='utf-8') as f:
         json.dump({
@@ -234,10 +228,10 @@ def save_splits(
 
 
 def load_splits(
-    config: Optional[Dict[str, Any]] = None,
-    splits_path: Optional[Path] = None
+        config: Optional[Dict[str, Any]] = None,
+        splits_path: Optional[Path] = None
 ) -> Dict[str, pd.DataFrame]:
-    """Загрузить сплиты"""
+    """Load train/val/test splits from parquet."""
     if config is None:
         config = load_config()
 
@@ -250,6 +244,6 @@ def load_splits(
         file_path = splits_path / f"{split_name}.parquet"
         if file_path.exists():
             splits[split_name] = pd.read_parquet(file_path)
-            print(f"📂 Loaded {split_name}: {len(splits[split_name]):,} rows")
+            print(f"Loaded {split_name}: {len(splits[split_name]):,} rows")
 
     return splits
