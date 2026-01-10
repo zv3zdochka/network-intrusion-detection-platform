@@ -63,7 +63,7 @@ def run_step_3_audit_eda(config: dict) -> dict:
     df = load_bronze_data(config)
 
     audit_results = run_audit(df, config)
-    eda_files = run_eda(df, config, save_format="png")  # Use PNG instead of HTML
+    eda_files = run_eda(df, config)
     report_path = generate_report(audit_results, eda_files, config)
 
     return {
