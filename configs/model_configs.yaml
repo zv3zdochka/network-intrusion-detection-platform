@@ -1,0 +1,102 @@
+# ============================================
+# Конфигурации моделей для экспериментов
+# ============================================
+
+# Общие настройки
+general:
+  task: "binary"  # "binary" или "multiclass"
+  random_state: 42
+  use_gpu: false
+  n_jobs: -1
+
+# Эксперименты с Random Forest
+random_forest:
+  - name: "RF_baseline"
+    n_estimators: 100
+    max_depth: null
+    class_weight: "balanced"
+
+  - name: "RF_deep"
+    n_estimators: 200
+    max_depth: 20
+    min_samples_split: 5
+    class_weight: "balanced"
+
+  - name: "RF_wide"
+    n_estimators: 300
+    max_depth: 10
+    min_samples_leaf: 2
+    class_weight: "balanced"
+
+# Эксперименты с XGBoost
+xgboost:
+  - name: "XGB_baseline"
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+
+  - name: "XGB_deep"
+    n_estimators: 200
+    max_depth: 10
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+
+  - name: "XGB_regularized"
+    n_estimators: 150
+    max_depth: 8
+    learning_rate: 0.1
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+
+# Эксперименты с LightGBM
+lightgbm:
+  - name: "LGBM_baseline"
+    n_estimators: 100
+    num_leaves: 31
+    learning_rate: 0.1
+    class_weight: "balanced"
+
+  - name: "LGBM_deep"
+    n_estimators: 200
+    num_leaves: 63
+    max_depth: 10
+    learning_rate: 0.05
+    class_weight: "balanced"
+
+  - name: "LGBM_fast"
+    n_estimators: 300
+    num_leaves: 15
+    learning_rate: 0.15
+    class_weight: "balanced"
+
+# Эксперименты с Neural Network
+neural_net:
+  - name: "NN_small"
+    hidden_layers: [64, 32]
+    learning_rate: 0.001
+    batch_size: 256
+    max_epochs: 50
+    dropout: 0.2
+
+  - name: "NN_medium"
+    hidden_layers: [128, 64, 32]
+    learning_rate: 0.001
+    batch_size: 512
+    max_epochs: 100
+    dropout: 0.3
+
+  - name: "NN_large"
+    hidden_layers: [256, 128, 64, 32]
+    learning_rate: 0.0005
+    batch_size: 256
+    max_epochs: 100
+    dropout: 0.4
+
+# Настройки ансамбля
+ensemble:
+  voting: "soft"
+  # Количество лучших моделей для ансамбля
+  top_k: 5
+  # Метрика для отбора лучших
+  selection_metric: "f1"
