@@ -406,7 +406,7 @@ Hyperparameters:
 - learning_rate: 0.1
 - reg_alpha: 0.1
 - reg_lambda: 1.0
-```
+
 
 ### Ensemble Performance
 
@@ -481,7 +481,7 @@ pytest tests/ -v
 
 # End-to-end tests
 python scripts/run_e2e_test.py
-```
+
 
 **E2E Test Components:**
 
@@ -670,9 +670,9 @@ Starting... (Ctrl+C to stop)
 TIME     STATUS    SOURCE                  DESTINATION             PROTO  CONF   PACKETS
 18:24:25   BENIGN   192.168.0.102:52304 ->   150.171.28.11:443   TCP  82.0%    38pkts
 18:24:25   BENIGN   192.168.0.102:59781 -> 185.199.111.133:443   TCP  82.0%    26pkts
-18:24:25 🚨ATTACK   192.168.0.102:60498 ->    172.66.44.77:443   TCP  87.3%    14pkts
+18:24:25   ATTACK   192.168.0.102:60498 ->    172.66.44.77:443   TCP  87.3%    14pkts
 
-🚨======================================================================
+======================================================================
     ATTACK DETECTED!
 ======================================================================
   Time:       2026-01-11T18:24:25.123456
