@@ -286,59 +286,64 @@ a:hover {
     50% { color: var(--danger); transform: scale(1.2); }
 }
 
-/* ===== Metrics Row - Fixed Height ===== */
+
 .metrics-row {
     display: grid;
-    grid-template-columns: 1fr 200px 1fr;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-    height: 180px;
+    grid-template-columns: 1fr 220px 1fr;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    min-height: 300px; /* Увеличили высоту */
 }
 
 .metric-card {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 1rem;
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    box-shadow: var(--shadow);
 }
 
 .metric-card h3 {
-    font-size: 0.875rem;
+    font-size: 0.9rem;
+    font-weight: 600;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
-    flex-shrink: 0;
-}
-
-.metric-card.chart-card {
-    min-height: 0;
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .chart-container {
     flex: 1;
-    min-height: 0;
+    width: 100%;
+    min-height: 220px; /* Фиксированная минимальная высота для графиков */
     position: relative;
 }
 
-.chart-container canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100% !important;
-    height: 100% !important;
+/* Фикс для четкости графиков */
+canvas {
+    image-rendering: auto;
 }
 
 .metric-card.value-card {
     justify-content: center;
     align-items: center;
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
 }
 
 .metric-value {
-    font-size: 3rem;
-    font-weight: 600;
-    text-align: center;
+    font-size: 3.5rem;
+    font-weight: 700;
+    color: var(--accent);
+    text-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.flows-table-wrapper {
+    overflow-x: auto;
+    max-height: 500px; /* Увеличили область таблицы */
+    overflow-y: auto;
+    border-radius: var(--radius);
 }
 
 /* ===== Data Table ===== */
@@ -370,12 +375,6 @@ a:hover {
     font-size: 0.875rem;
     color: var(--text-secondary);
     cursor: pointer;
-}
-
-.flows-table-wrapper {
-    overflow-x: auto;
-    max-height: 400px;
-    overflow-y: auto;
 }
 
 .data-table {
