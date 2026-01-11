@@ -1,6 +1,6 @@
 """
-Базовый веб-интерфейс для интеграции с Flask/FastAPI
-Предоставляет endpoints для мониторинга и управления
+Base web interface for integration with Flask/FastAPI
+Provides endpoints for monitoring and control
 """
 
 from typing import Dict, Any, Optional, List
@@ -8,7 +8,7 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 
-# Опциональный импорт Flask
+# Optional Flask import
 try:
     from flask import Blueprint, jsonify, request
 
@@ -16,7 +16,7 @@ try:
 except ImportError:
     FLASK_AVAILABLE = False
 
-# Опциональный импорт FastAPI
+# Optional FastAPI import
 try:
     from fastapi import APIRouter, HTTPException
     from pydantic import BaseModel
@@ -28,19 +28,19 @@ except ImportError:
 
 class WebInterface:
     """
-    Базовый класс веб-интерфейса
-    Можно использовать с Flask или FastAPI
+    Base web interface class
+    Can be used with Flask or FastAPI
     """
 
     def __init__(self, pipeline):
         """
         Args:
-            pipeline: Экземпляр RealtimePipeline
+            pipeline: RealtimePipeline instance
         """
         self.pipeline = pipeline
 
     def get_status(self) -> Dict[str, Any]:
-        """Возвращает текущий статус pipeline"""
+        """Returns the current pipeline status"""
         return {
             'status': 'running' if self.pipeline.is_running() else 'stopped',
             'summary': self.pipeline.get_summary(),
@@ -48,32 +48,32 @@ class WebInterface:
         }
 
     def get_stats(self) -> Dict[str, Any]:
-        """Возвращает подробную статистику"""
+        """Returns detailed statistics"""
         return self.pipeline.get_stats()
 
     def get_recent_results(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Возвращает последние результаты анализа"""
+        """Returns recent analysis results"""
         results = self.pipeline.get_recent_results(limit)
         return [asdict(r) if hasattr(r, '__dataclass_fields__') else r for r in results]
 
     def get_recent_attacks(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Возвращает последние обнаруженные атаки"""
+        """Returns recent detected attacks"""
         attacks = self.pipeline.get_recent_attacks(limit)
         return [asdict(a) if hasattr(a, '__dataclass_fields__') else a for a in attacks]
 
     def get_active_flows(self) -> List[Dict[str, Any]]:
-        """Возвращает активные потоки"""
+        """Returns active flows"""
         return self.pipeline.aggregator.get_active_flows()
 
     def start_pipeline(self) -> Dict[str, str]:
-        """Запускает pipeline"""
+        """Starts the pipeline"""
         if self.pipeline.is_running():
             return {'status': 'already_running'}
         self.pipeline.start()
         return {'status': 'started'}
 
     def stop_pipeline(self) -> Dict[str, str]:
-        """Останавливает pipeline"""
+        """Stops the pipeline"""
         if not self.pipeline.is_running():
             return {'status': 'already_stopped'}
         self.pipeline.stop()
@@ -82,10 +82,10 @@ class WebInterface:
 
 def create_flask_blueprint(pipeline) -> 'Blueprint':
     """
-    Создаёт Flask Blueprint с endpoints
+    Creates a Flask Blueprint with endpoints
 
     Args:
-        pipeline: Экземпляр RealtimePipeline
+        pipeline: RealtimePipeline instance
 
     Returns:
         Flask Blueprint
@@ -131,10 +131,10 @@ def create_flask_blueprint(pipeline) -> 'Blueprint':
 
 def create_fastapi_router(pipeline) -> 'APIRouter':
     """
-    Создаёт FastAPI Router с endpoints
+    Creates a FastAPI Router with endpoints
 
     Args:
-        pipeline: Экземпляр RealtimePipeline
+        pipeline: RealtimePipeline instance
 
     Returns:
         FastAPI APIRouter
@@ -176,25 +176,25 @@ def create_fastapi_router(pipeline) -> 'APIRouter':
     return router
 
 
-# WebSocket support для real-time обновлений
+# WebSocket support for real-time updates
 class WebSocketHandler:
-    """Обработчик WebSocket подключений"""
+    """WebSocket connection handler"""
 
     def __init__(self, pipeline):
         self.pipeline = pipeline
         self.clients: List[Any] = []
 
     def add_client(self, websocket):
-        """Добавляет WebSocket клиента"""
+        """Adds a WebSocket client"""
         self.clients.append(websocket)
 
     def remove_client(self, websocket):
-        """Удаляет WebSocket клиента"""
+        """Removes a WebSocket client"""
         if websocket in self.clients:
             self.clients.remove(websocket)
 
     async def broadcast(self, message: Dict[str, Any]):
-        """Отправляет сообщение всем клиентам"""
+        """Sends a message to all clients"""
         data = json.dumps(message)
         for client in self.clients[:]:
             try:
@@ -203,7 +203,7 @@ class WebSocketHandler:
                 self.remove_client(client)
 
     def on_attack_detected(self, result):
-        """Callback для отправки уведомления об атаке"""
+        """Callback for broadcasting an attack notification"""
         import asyncio
 
         message = {
@@ -212,7 +212,7 @@ class WebSocketHandler:
             'timestamp': datetime.now().isoformat()
         }
 
-        # Запускаем в event loop
+        # Schedule on the event loop
         try:
             loop = asyncio.get_event_loop()
             loop.create_task(self.broadcast(message))

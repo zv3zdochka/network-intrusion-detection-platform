@@ -1,5 +1,5 @@
 """
-Вспомогательные функции и утилиты
+Helper functions and utilities
 """
 
 import os
@@ -18,15 +18,15 @@ def setup_logging(
         format_string: Optional[str] = None
 ) -> logging.Logger:
     """
-    Настраивает логирование
+    Configures logging
 
     Args:
-        log_file: Путь к файлу логов (None = только консоль)
-        level: Уровень логирования
-        format_string: Формат сообщений
+        log_file: Path to the log file (None = console only)
+        level: Logging level
+        format_string: Message format
 
     Returns:
-        Настроенный logger
+        Configured logger
     """
     if format_string is None:
         format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -34,15 +34,15 @@ def setup_logging(
     logger = logging.getLogger('realtime_analyzer')
     logger.setLevel(level)
 
-    # Очищаем существующие handlers
+    # Clear existing handlers
     logger.handlers.clear()
 
-    # Консольный handler
+    # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(logging.Formatter(format_string))
     logger.addHandler(console_handler)
 
-    # Файловый handler
+    # File handler
     if log_file:
         os.makedirs(os.path.dirname(log_file), exist_ok=True) if os.path.dirname(log_file) else None
         file_handler = logging.FileHandler(log_file)
@@ -53,7 +53,7 @@ def setup_logging(
 
 
 def result_to_dict(result) -> Dict[str, Any]:
-    """Конвертирует AnalysisResult в словарь"""
+    """Converts an AnalysisResult to a dictionary"""
     if hasattr(result, '__dataclass_fields__'):
         return asdict(result)
     elif hasattr(result, '__dict__'):
@@ -67,12 +67,12 @@ def save_results_json(
         append: bool = False
 ):
     """
-    Сохраняет результаты в JSON файл
+    Saves results to a JSON file
 
     Args:
-        results: Список результатов
-        filepath: Путь к файлу
-        append: Дописывать в существующий файл
+        results: List of results
+        filepath: File path
+        append: Append to an existing file
     """
     data = [result_to_dict(r) for r in results]
 
@@ -93,12 +93,12 @@ def save_results_csv(
         append: bool = False
 ):
     """
-    Сохраняет результаты в CSV файл
+    Saves results to a CSV file
 
     Args:
-        results: Список результатов
-        filepath: Путь к файлу
-        append: Дописывать в существующий файл
+        results: List of results
+        filepath: File path
+        append: Append to an existing file
     """
     import csv
 
@@ -107,7 +107,7 @@ def save_results_csv(
 
     data = [result_to_dict(r) for r in results]
 
-    # Получаем заголовки (исключаем вложенные словари)
+    # Determine headers (exclude nested dicts)
     headers = [k for k in data[0].keys()
                if not isinstance(data[0][k], (dict, list))]
 
@@ -124,7 +124,7 @@ def save_results_csv(
 
 
 def protocol_name(proto_num: int) -> str:
-    """Возвращает имя протокола по номеру"""
+    """Returns the protocol name for a given protocol number"""
     protocols = {
         1: 'ICMP',
         6: 'TCP',
@@ -141,7 +141,7 @@ def protocol_name(proto_num: int) -> str:
 
 
 def format_bytes(num_bytes: int) -> str:
-    """Форматирует байты в читаемый формат"""
+    """Formats bytes into a human-readable string"""
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if abs(num_bytes) < 1024.0:
             return f"{num_bytes:.1f} {unit}"
@@ -150,7 +150,7 @@ def format_bytes(num_bytes: int) -> str:
 
 
 def format_duration(seconds: float) -> str:
-    """Форматирует продолжительность"""
+    """Formats a duration"""
     if seconds < 0.001:
         return f"{seconds * 1000000:.1f}μs"
     elif seconds < 1:
@@ -164,12 +164,12 @@ def format_duration(seconds: float) -> str:
 
 
 def format_timestamp(ts: float) -> str:
-    """Форматирует Unix timestamp в читаемую дату"""
+    """Formats a Unix timestamp as a readable datetime string"""
     return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
 
 
 class AlertManager:
-    """Менеджер оповещений об атаках"""
+    """Attack alert manager"""
 
     def __init__(
             self,
@@ -180,10 +180,10 @@ class AlertManager:
     ):
         """
         Args:
-            alert_threshold: Порог количества атак для оповещения
-            alert_window_seconds: Временное окно для подсчёта атак
-            cooldown_seconds: Период "охлаждения" между оповещениями
-            on_alert: Callback при срабатывании оповещения
+            alert_threshold: Attack count threshold for triggering an alert
+            alert_window_seconds: Time window used to count attacks
+            cooldown_seconds: Cooldown period between alerts
+            on_alert: Callback invoked when an alert is triggered
         """
         self.alert_threshold = alert_threshold
         self.alert_window_seconds = alert_window_seconds
@@ -197,10 +197,10 @@ class AlertManager:
 
     def add_attack(self, attack_info: Dict[str, Any]) -> bool:
         """
-        Добавляет информацию об атаке
+        Adds attack information
 
         Returns:
-            True если было отправлено оповещение
+            True if an alert was sent
         """
         now = datetime.now()
         attack_info['detected_at'] = now.isoformat()
@@ -208,16 +208,16 @@ class AlertManager:
         with self._lock:
             self._attacks.append(attack_info)
 
-            # Очищаем старые атаки
+            # Remove old attacks
             cutoff = now.timestamp() - self.alert_window_seconds
             recent_attacks = [
                 a for a in self._attacks
                 if datetime.fromisoformat(a['detected_at']).timestamp() > cutoff
             ]
 
-            # Проверяем нужно ли оповещение
+            # Check whether an alert should be triggered
             if len(recent_attacks) >= self.alert_threshold:
-                # Проверяем cooldown
+                # Check cooldown
                 if self._last_alert_time is None or \
                         (now - self._last_alert_time).total_seconds() > self.cooldown_seconds:
 
@@ -233,22 +233,22 @@ class AlertManager:
         return False
 
     def _create_alert(self, attacks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Создаёт объект оповещения"""
-        # Группируем по типу атаки
+        """Creates an alert object"""
+        # Group by attack type
         attack_types: Dict[str, int] = {}
         sources: Dict[str, int] = {}
         targets: Dict[str, int] = {}
 
         for attack in attacks:
-            # Тип атаки
+            # Attack type
             attack_type = attack.get('class_name', 'unknown')
             attack_types[attack_type] = attack_types.get(attack_type, 0) + 1
 
-            # Источник
+            # Source
             src = attack.get('src_ip', 'unknown')
             sources[src] = sources.get(src, 0) + 1
 
-            # Цель
+            # Target
             dst = attack.get('dst_ip', 'unknown')
             targets[dst] = targets.get(dst, 0) + 1
 
@@ -264,7 +264,7 @@ class AlertManager:
         }
 
     def _calculate_severity(self, attack_count: int) -> str:
-        """Определяет уровень серьёзности"""
+        """Determines the severity level"""
         if attack_count >= self.alert_threshold * 5:
             return 'critical'
         elif attack_count >= self.alert_threshold * 2:
@@ -274,30 +274,30 @@ class AlertManager:
         return 'low'
 
     def get_alert_history(self, n: int = 100) -> List[Dict[str, Any]]:
-        """Возвращает историю оповещений"""
+        """Returns alert history"""
         with self._lock:
             return self._alert_history[-n:]
 
     def get_recent_attacks(self, n: int = 100) -> List[Dict[str, Any]]:
-        """Возвращает последние атаки"""
+        """Returns recent attacks"""
         with self._lock:
             return list(self._attacks)[-n:]
 
     def clear(self):
-        """Очищает историю"""
+        """Clears history"""
         with self._lock:
             self._attacks.clear()
             self._alert_history.clear()
 
 
 class RateLimiter:
-    """Ограничитель скорости для обработки"""
+    """Rate limiter for processing"""
 
     def __init__(self, max_rate: float, window_seconds: float = 1.0):
         """
         Args:
-            max_rate: Максимальное количество операций за окно
-            window_seconds: Размер окна в секундах
+            max_rate: Maximum number of operations per window
+            window_seconds: Window size in seconds
         """
         self.max_rate = max_rate
         self.window_seconds = window_seconds
@@ -306,20 +306,20 @@ class RateLimiter:
 
     def acquire(self) -> bool:
         """
-        Пытается получить разрешение на операцию
+        Attempts to acquire permission for an operation
 
         Returns:
-            True если операция разрешена
+            True if the operation is allowed
         """
         now = datetime.now().timestamp()
 
         with self._lock:
-            # Очищаем старые timestamps
+            # Remove old timestamps
             cutoff = now - self.window_seconds
             while self._timestamps and self._timestamps[0] < cutoff:
                 self._timestamps.popleft()
 
-            # Проверяем лимит
+            # Check rate limit
             if len(self._timestamps) < self.max_rate:
                 self._timestamps.append(now)
                 return True
@@ -328,10 +328,10 @@ class RateLimiter:
 
     def wait(self) -> float:
         """
-        Ждёт до освобождения слота
+        Waits until a slot is available
 
         Returns:
-            Время ожидания в секундах
+            Wait time in seconds
         """
         import time
 
@@ -342,7 +342,7 @@ class RateLimiter:
 
 
 class MovingAverage:
-    """Скользящее среднее для метрик"""
+    """Moving average for metrics"""
 
     def __init__(self, window_size: int = 100):
         self.window_size = window_size
@@ -350,19 +350,19 @@ class MovingAverage:
         self._lock = threading.Lock()
 
     def add(self, value: float):
-        """Добавляет значение"""
+        """Adds a value"""
         with self._lock:
             self._values.append(value)
 
     def get(self) -> float:
-        """Возвращает текущее среднее"""
+        """Returns the current average"""
         with self._lock:
             if not self._values:
                 return 0.0
             return sum(self._values) / len(self._values)
 
     def get_stats(self) -> Dict[str, float]:
-        """Возвращает статистику"""
+        """Returns statistics"""
         import statistics
 
         with self._lock:
@@ -379,7 +379,7 @@ class MovingAverage:
 
 
 class MetricsCollector:
-    """Сборщик метрик для мониторинга"""
+    """Metric collector for monitoring"""
 
     def __init__(self):
         self._metrics: Dict[str, MovingAverage] = {}
@@ -387,31 +387,31 @@ class MetricsCollector:
         self._lock = threading.Lock()
 
     def record(self, name: str, value: float, window_size: int = 100):
-        """Записывает значение метрики"""
+        """Records a metric value"""
         with self._lock:
             if name not in self._metrics:
                 self._metrics[name] = MovingAverage(window_size)
             self._metrics[name].add(value)
 
     def increment(self, name: str, value: int = 1):
-        """Увеличивает счётчик"""
+        """Increments a counter"""
         with self._lock:
             self._counters[name] = self._counters.get(name, 0) + value
 
     def get_metric(self, name: str) -> Dict[str, float]:
-        """Возвращает статистику метрики"""
+        """Returns metric statistics"""
         with self._lock:
             if name in self._metrics:
                 return self._metrics[name].get_stats()
             return {}
 
     def get_counter(self, name: str) -> int:
-        """Возвращает значение счётчика"""
+        """Returns counter value"""
         with self._lock:
             return self._counters.get(name, 0)
 
     def get_all(self) -> Dict[str, Any]:
-        """Возвращает все метрики"""
+        """Returns all metrics"""
         with self._lock:
             return {
                 'metrics': {name: m.get_stats() for name, m in self._metrics.items()},
@@ -420,7 +420,7 @@ class MetricsCollector:
 
 
 def validate_ip(ip: str) -> bool:
-    """Проверяет валидность IP-адреса"""
+    """Validates an IP address"""
     import socket
     try:
         socket.inet_aton(ip)
@@ -434,7 +434,7 @@ def validate_ip(ip: str) -> bool:
 
 
 def is_private_ip(ip: str) -> bool:
-    """Проверяет, является ли IP приватным"""
+    """Checks whether an IP address is private"""
     import ipaddress
     try:
         return ipaddress.ip_address(ip).is_private
@@ -444,14 +444,14 @@ def is_private_ip(ip: str) -> bool:
 
 def get_geo_info(ip: str) -> Optional[Dict[str, Any]]:
     """
-    Получает геолокацию по IP (требует geoip2)
+    Gets geolocation information for an IP (requires geoip2)
 
     Returns:
-        Словарь с информацией о геолокации или None
+        Dictionary with geolocation information or None
     """
     try:
         import geoip2.database
-        # Путь к базе GeoLite2
+        # GeoLite2 database path
         db_path = os.environ.get('GEOIP_DB', '/usr/share/GeoIP/GeoLite2-City.mmdb')
         if os.path.exists(db_path):
             with geoip2.database.Reader(db_path) as reader:
