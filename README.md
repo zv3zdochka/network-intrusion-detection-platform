@@ -1,6 +1,10 @@
+Конечно! Ниже — **полный обновлённый `README.md`**, в который я аккуратно добавил раздел про веб-интерфейс и его функционал, **не убирая ничего из оригинала**. Все изменения органично вплетены в структуру документа.
+
+---
+
 # Network Intrusion Detection System
 
-A machine learning-based network intrusion detection system trained on the CIC-IDS-2017 dataset. This project implements a complete ML pipeline from raw data processing to model training, simulation, and **real-time traffic analysis**.
+A machine learning-based network intrusion detection system trained on the CIC-IDS-2017 dataset. This project implements a complete ML pipeline from raw data processing to model training, simulation, **real-time traffic analysis**, and **interactive web interface for monitoring and offline analysis**.
 
 ![Python](https://img.shields.io/badge/Python-3.12%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -18,6 +22,7 @@ A machine learning-based network intrusion detection system trained on the CIC-I
 - [Results](#results)
 - [Testing & Simulation](#testing--simulation)
 - [Real-Time Traffic Analysis](#real-time-traffic-analysis)
+- [Web Interface](#web-interface)
 - [Usage](#usage)
 - [References](#references)
 
@@ -36,6 +41,7 @@ This project develops a binary classification system to detect malicious network
 - **Comprehensive EDA**: Automated generation of visualizations and audit reports
 - **Simulation pipeline**: Real-time flow replay with metrics collection and visualization
 - **Real-time traffic analysis**: Live network packet capture and classification
+- **Interactive Web Interface**: Dashboard for real-time monitoring and offline dataset analysis
 - **End-to-end testing**: Unit tests and E2E tests for all pipeline components
 
 ---
@@ -166,6 +172,18 @@ TraficAnalysis/
 │   ├── experiment_results.csv
 │   └── feature_importance.csv
 │
+├── web/                            # Web interface
+│   ├── app.py                      # Flask application factory
+│   ├── routes/                     # Route handlers
+│   │   ├── main.py                 # Dashboard
+│   │   ├── realtime.py             # Real-time analysis
+│   │   ├── offline.py              # Offline dataset analysis
+│   │   └── api.py                  # REST API endpoints
+│   ├── services/                   # Business logic
+│   ├── templates/                  # HTML templates
+│   ├── static/                     # CSS, JS, images
+│   └── __init__.py
+│
 ├── requirements.txt
 └── LICENSE
 ```
@@ -180,6 +198,7 @@ TraficAnalysis/
 | `scripts/local_attack_test.py` | Simulates attacks for testing the IDS |
 | `src/inference/` | Model loading and batch prediction |
 | `src/simulation/` | Offline flow replay and metrics |
+| `web/` | Interactive web interface built with Flask, Chart.js, and SSE |
 
 ---
 
@@ -569,7 +588,6 @@ python scripts/run_simulation.py --quiet --output results.json
 
 The real-time module captures live network traffic, extracts flow features compatible with CICIDS2017, and classifies each flow using the trained model.
 
-
 ### Module Components
 
 | File | Description |
@@ -815,6 +833,119 @@ python scripts/local_attack_test.py -t 192.168.1.100 -a portscan
 | CPU usage | 5-15% single core |
 
 ---
+## Web Interface
+
+The system includes an interactive web interface built with **Flask**, **HTML/CSS**, **JavaScript**, and **Chart.js** for:
+
+* real-time monitoring (live capture + streaming updates),
+* offline dataset analysis (batch inference + metrics),
+* basic REST API access for integrations.
+
+### Launching the Web Interface
+
+#### Windows (PowerShell)
+
+Run from the project root **in PowerShell as Administrator**, with the **virtual environment activated**:
+
+```powershell
+# 1) Activate venv
+.\.venv\Scripts\Activate.ps1
+
+# 2) Run the web server (recommended entry point)
+python scripts/run_web.py --debug
+```
+
+Then open:
+
+* `http://127.0.0.1:5000`
+
+#### Linux/Mac
+
+```bash
+source .venv/bin/activate
+python do.py
+```
+
+### Dashboard (`/`)
+
+The home page provides a quick overview:
+
+* **Model Information**: model name/type, number of features, reference metrics (e.g., test F1).
+* **Recent Sessions**: past real-time runs with runtime, flow count, and attack count.
+* Navigation to **Real-Time** and **Offline** pages.
+
+![Dashboard](web/screenshots/dash.png)
+
+
+### Real-Time Analysis (`/realtime`)
+
+Live monitoring of network traffic:
+
+* **Interface Selection**: pick a network interface from the detected list.
+* **Threshold Control**: adjust detection sensitivity (default: `0.5`).
+* **Live Stats Bar**:
+
+  * packets, flows, attacks,
+  * packets/sec,
+  * attack rate (%).
+* **Charts**:
+
+  * traffic rate (packets/sec),
+  * attack rate (%) over time.
+* **Recent Flows Table**:
+
+  * up to 50 latest flows,
+  * optional “attacks only” filter,
+  * includes source/destination, protocol, confidence, packet count.
+* **Server-Sent Events (SSE)**: streaming updates without page refresh.
+
+#### Online Example Result
+
+![Online analysis result](web/screenshots/online.png)
+
+
+### Offline Analysis (`/offline`)
+
+Upload and analyze historical datasets:
+
+* **File Upload**: supports `.csv` and `.parquet`.
+* **Automatic Analysis**:
+
+  * detects ground-truth labels if present,
+  * applies the same preprocessing + model as training,
+  * computes full classification metrics (precision/recall/F1/confusion matrix) when labels exist.
+* **Results Visualization**:
+
+  * summary cards (total flows, attack rate, benign vs attack counts),
+  * probability distribution histogram,
+  * classification metrics (if labels are available).
+* **Progress Indicator**: shows completion percentage during analysis.
+
+#### Offline Example Result
+
+![Offline analysis result](web/screenshots/ofline.png)
+
+### API Endpoints
+
+The web interface exposes a REST API for integration:
+
+| Endpoint                | Description                                                   |
+| ----------------------- | ------------------------------------------------------------- |
+| `GET /api/model-info`   | Model name, type, feature count, and reference test metric(s) |
+| `GET /api/sessions`     | Recent real-time analysis sessions                            |
+| `GET /api/health`       | Health check                                                  |
+| `POST /offline/analyze` | Start offline dataset analysis                                |
+| `GET /offline/progress` | Poll analysis progress and results                            |
+
+### Architecture
+
+* **Backend**: Flask + blueprints (`main`, `realtime`, `offline`, `api`)
+* **Frontend**: vanilla JS + Chart.js + SSE
+* **State**: in-process global state objects for background tasks
+* **Execution**: background threads for long-running offline analysis
+
+---
+
 
 ## Usage
 
