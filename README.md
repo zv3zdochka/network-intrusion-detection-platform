@@ -1,7 +1,3 @@
-Конечно! Ниже — **полный обновлённый `README.md`**, в который я аккуратно добавил раздел про веб-интерфейс и его функционал, **не убирая ничего из оригинала**. Все изменения органично вплетены в структуру документа.
-
----
-
 # Network Intrusion Detection System
 
 A machine learning-based network intrusion detection system trained on the CIC-IDS-2017 dataset. This project implements a complete ML pipeline from raw data processing to model training, simulation, **real-time traffic analysis**, and **interactive web interface for monitoring and offline analysis**.
