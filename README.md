@@ -569,19 +569,6 @@ python scripts/run_simulation.py --quiet --output results.json
 
 The real-time module captures live network traffic, extracts flow features compatible with CICIDS2017, and classifies each flow using the trained model.
 
-### Architecture
-
-```
-┌─────────────┐    ┌─────────────────┐    ┌──────────────────┐    ┌────────────┐
-│   Network   │───▶│  PacketCapture  │───▶│  FlowAggregator  │───▶│  Feature   │
-│  Interface  │    │    (scapy)      │    │  (bidirectional) │    │ Extractor  │
-└─────────────┘    └─────────────────┘    └──────────────────┘    └─────┬──────┘
-                                                                        │
-┌─────────────┐    ┌─────────────────┐    ┌──────────────────┐          │
-│   Results   │◀───│    Pipeline     │◀───│ TrafficAnalyzer  │◀─────────┘
-│   Saver     │    │  (orchestrator) │    │  (XGBoost model) │
-└─────────────┘    └─────────────────┘    └──────────────────┘
-```
 
 ### Module Components
 
