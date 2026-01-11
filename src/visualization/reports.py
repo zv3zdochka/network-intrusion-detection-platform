@@ -28,7 +28,7 @@ class SimulationReporter:
             report: Dict[str, Any],
             snapshots: List[Dict[str, Any]],
             run_id: Optional[int] = None,
-            save_html: bool = True
+            save_html: bool = False
     ) -> Dict[str, Path]:
         """
         Generate all visualizations for a simulation run.
