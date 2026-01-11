@@ -10,6 +10,7 @@ from sqlalchemy import (
     Boolean, DateTime, ForeignKey, Text, JSON
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 Base = declarative_base()
 
@@ -21,15 +22,13 @@ class SimulationRun(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     started_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
-    status = Column(String(20), default="running")  # running, completed, failed
+    status = Column(String(20), default="running")
 
-    # Configuration
     data_source = Column(String(255))
     speed = Column(Float, default=1.0)
     batch_size = Column(Integer, default=100)
     max_flows = Column(Integer, nullable=True)
 
-    # Results
     total_flows = Column(Integer, default=0)
     total_alerts = Column(Integer, default=0)
     precision = Column(Float, nullable=True)
@@ -39,10 +38,8 @@ class SimulationRun(Base):
     latency_p50 = Column(Float, nullable=True)
     latency_p95 = Column(Float, nullable=True)
 
-    # Full report as JSON
     report = Column(JSON, nullable=True)
 
-    # Relationships
     alerts = relationship("Alert", back_populates="simulation_run", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -64,10 +61,8 @@ class Alert(Base):
     is_correct = Column(Boolean, nullable=True)
     inference_time_ms = Column(Float)
 
-    # Optional: store top features for this alert
     top_features = Column(JSON, nullable=True)
 
-    # Relationship
     simulation_run = relationship("SimulationRun", back_populates="alerts")
 
     def __repr__(self):
@@ -92,11 +87,24 @@ class Session:
 
     _engine = None
     _SessionLocal = None
+    _database_url = None
 
     @classmethod
     def init(cls, database_url: str = "sqlite:///data/simulation.db", echo: bool = False):
         """Initialize database connection."""
-        cls._engine = create_engine(database_url, echo=echo)
+        cls._database_url = database_url
+
+        # For SQLite, use StaticPool to avoid threading issues
+        if "sqlite" in database_url:
+            cls._engine = create_engine(
+                database_url,
+                echo=echo,
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool
+            )
+        else:
+            cls._engine = create_engine(database_url, echo=echo)
+
         cls._SessionLocal = sessionmaker(bind=cls._engine)
         Base.metadata.create_all(cls._engine)
 
@@ -109,6 +117,9 @@ class Session:
 
     @classmethod
     def close(cls):
-        """Close engine."""
+        """Close engine and dispose connections."""
         if cls._engine:
             cls._engine.dispose()
+            cls._engine = None
+            cls._SessionLocal = None
+            cls._database_url = None

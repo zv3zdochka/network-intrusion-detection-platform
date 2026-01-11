@@ -24,6 +24,9 @@ import pandas as pd
 from src.inference import Predictor, InferencePipeline
 from src.simulation import FlowReplay, SimulationRunner, SimulationConfig, MetricsCollector
 from src.database import Repository, Session
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class TestResult:
@@ -230,11 +233,12 @@ def test_database_operations() -> dict:
     """Test database CRUD operations."""
     import tempfile
     import os
+    import time
 
     # Use temporary database
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
+    db_path = tempfile.mktemp(suffix=".db")
 
+    repo = None
     try:
         repo = Repository(f"sqlite:///{db_path}")
 
@@ -269,14 +273,29 @@ def test_database_operations() -> dict:
         updated_run = repo.get_simulation_run(run.id)
         assert updated_run.status == "completed", "Status not updated"
 
-        return {
+        result = {
             "run_id": run.id,
             "alerts_created": count,
             "alerts_retrieved": len(alerts)
         }
 
     finally:
-        os.unlink(db_path)
+        # Close repository and database connection
+        if repo:
+            repo.close()
+
+        # Wait a bit for Windows to release file lock
+        time.sleep(0.1)
+
+        # Try to remove temp file
+        try:
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+        except PermissionError:
+            # On Windows, sometimes the file is still locked
+            pass
+
+    return result
 
 
 def test_no_data_loss() -> dict:
