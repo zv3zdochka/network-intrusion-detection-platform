@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Network IDS{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <header class="page-header">
+        <h1>Network Intrusion Detection System</h1>
+        <p class="subtitle">Machine Learning-based Traffic Analysis</p>
+    </header>
+
+    <div class="cards-grid">
+        <a href="/realtime" class="card card-link">
+            <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12,6 12,12 16,14"/>
+                </svg>
+            </div>
+            <h2>Real-Time Analysis</h2>
+            <p>Capture and analyze live network traffic in real-time</p>
+            <span class="card-action">Start Monitoring</span>
+        </a>
+
+        <a href="/offline" class="card card-link">
+            <div class="card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+            </div>
+            <h2>Offline Analysis</h2>
+            <p>Upload and analyze network traffic datasets</p>
+            <span class="card-action">Upload Dataset</span>
+        </a>
+    </div>
+
+    <section class="info-section">
+        <h2>Model Information</h2>
+        <div class="info-grid" id="model-info">
+            <div class="info-item">
+                <span class="info-label">Model</span>
+                <span class="info-value" id="model-name">Loading...</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Type</span>
+                <span class="info-value" id="model-type">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Features</span>
+                <span class="info-value" id="model-features">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Test F1</span>
+                <span class="info-value" id="model-f1">-</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="info-section">
+        <h2>Recent Sessions</h2>
+        <div class="sessions-list" id="sessions-list">
+            <p class="loading">Loading sessions...</p>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load model info
+    fetch('/api/model-info')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('model-name').textContent = data.name || '-';
+            document.getElementById('model-type').textContent = data.type || '-';
+            document.getElementById('model-features').textContent = data.features || '-';
+            document.getElementById('model-f1').textContent = data.test_f1 ? (data.test_f1 * 100).toFixed(2) + '%' : '-';
+        })
+        .catch(() => {
+            document.getElementById('model-name').textContent = 'Error loading';
+        });
+
+    // Load sessions
+    fetch('/api/sessions')
+        .then(r => r.json())
+        .then(sessions => {
+            const container = document.getElementById('sessions-list');
+            if (sessions.length === 0) {
+                container.innerHTML = '<p class="empty">No previous sessions found</p>';
+                return;
+            }
+
+            let html = '<table class="data-table"><thead><tr>' +
+                '<th>Session ID</th><th>Start Time</th><th>Duration</th><th>Flows</th><th>Attacks</th>' +
+                '</tr></thead><tbody>';
+
+            sessions.forEach(s => {
+                const startTime = s.start_time ? new Date(s.start_time).toLocaleString() : '-';
+                const duration = s.runtime ? formatDuration(s.runtime) : '-';
+                html += `<tr>
+                    <td><code>${s.id}</code></td>
+                    <td>${startTime}</td>
+                    <td>${duration}</td>
+                    <td>${s.flows.toLocaleString()}</td>
+                    <td class="${s.attacks > 0 ? 'text-danger' : ''}">${s.attacks}</td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(() => {
+            document.getElementById('sessions-list').innerHTML = '<p class="error">Error loading sessions</p>';
+        });
+});
+
+function formatDuration(seconds) {
+    if (seconds < 60) return seconds + 's';
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+    return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+}
+</script>
+{% endblock %}

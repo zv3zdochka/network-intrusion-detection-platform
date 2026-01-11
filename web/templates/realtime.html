@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+
+{% block title %}Real-Time Analysis - Network IDS{% endblock %}
+
+{% block content %}
+<div class="realtime-page">
+    <header class="page-header">
+        <h1>Real-Time Traffic Analysis</h1>
+        <div class="header-controls">
+            <select id="interface-select" class="select-input">
+                <option value="">Select Interface</option>
+                {% for iface in interfaces %}
+                <option value="{{ iface.name }}">{{ iface.name }} ({{ iface.ips|join(', ') }})</option>
+                {% endfor %}
+            </select>
+            <input type="number" id="threshold-input" class="number-input" value="0.5" min="0" max="1" step="0.1" title="Detection Threshold">
+            <button id="start-btn" class="btn btn-primary">Start Capture</button>
+            <button id="stop-btn" class="btn btn-danger" disabled>Stop</button>
+        </div>
+    </header>
+
+    <div class="status-bar" id="status-bar">
+        <div class="status-indicator offline" id="status-indicator">
+            <span class="status-dot"></span>
+            <span class="status-text">Offline</span>
+        </div>
+        <div class="status-stats">
+            <div class="stat">
+                <span class="stat-value" id="stat-packets">0</span>
+                <span class="stat-label">Packets</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-flows">0</span>
+                <span class="stat-label">Flows</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-attacks">0</span>
+                <span class="stat-label">Attacks</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-pps">0</span>
+                <span class="stat-label">Packets/s</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-rate">0%</span>
+                <span class="stat-label">Attack Rate</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="metrics-cards">
+        <div class="metric-card">
+            <h3>Traffic Rate</h3>
+            <canvas id="traffic-chart" height="120"></canvas>
+        </div>
+        <div class="metric-card">
+            <h3>Active Flows</h3>
+            <div class="metric-value" id="active-flows">0</div>
+        </div>
+        <div class="metric-card">
+            <h3>Attack Rate</h3>
+            <canvas id="attack-chart" height="120"></canvas>
+        </div>
+    </div>
+
+    <section class="flows-section">
+        <div class="section-header">
+            <h2>Recent Flows</h2>
+            <label class="checkbox-label">
+                <input type="checkbox" id="attacks-only"> Show attacks only
+            </label>
+        </div>
+        <div class="flows-table-wrapper">
+            <table class="data-table" id="flows-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Status</th>
+                        <th>Source</th>
+                        <th>Destination</th>
+                        <th>Protocol</th>
+                        <th>Confidence</th>
+                        <th>Packets</th>
+                    </tr>
+                </thead>
+                <tbody id="flows-body">
+                    <tr class="empty-row">
+                        <td colspan="7">No flows captured yet. Start the capture to begin.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const MAX_CHART_POINTS = 60;
+const MAX_FLOWS = 50;
+
+let trafficChart, attackChart;
+let trafficData = [];
+let attackData = [];
+let flows = [];
+let eventSource = null;
+let isRunning = false;
+
+// Initialize charts
+function initCharts() {
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+            x: { display: false },
+            y: { beginAtZero: true }
+        },
+        plugins: {
+            legend: { display: false }
+        }
+    };
+
+    trafficChart = new Chart(document.getElementById('traffic-chart'), {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 0
+            }]
+        },
+        options: chartOptions
+    });
+
+    attackChart = new Chart(document.getElementById('attack-chart'), {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                borderColor: '#ef4444',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 0
+            }]
+        },
+        options: chartOptions
+    });
+}
+
+// Update charts with new data
+function updateCharts(stats) {
+    const now = new Date().toLocaleTimeString();
+
+    trafficData.push(stats.packets_per_sec);
+    attackData.push(stats.attack_rate);
+
+    if (trafficData.length > MAX_CHART_POINTS) {
+        trafficData.shift();
+        attackData.shift();
+    }
+
+    trafficChart.data.labels = trafficData.map((_, i) => i);
+    trafficChart.data.datasets[0].data = trafficData;
+    trafficChart.update('none');
+
+    attackChart.data.labels = attackData.map((_, i) => i);
+    attackChart.data.datasets[0].data = attackData;
+    attackChart.update('none');
+}
+
+// Update stats display
+function updateStats(stats) {
+    document.getElementById('stat-packets').textContent = stats.packets.toLocaleString();
+    document.getElementById('stat-flows').textContent = stats.flows.toLocaleString();
+    document.getElementById('stat-attacks').textContent = stats.attacks.toLocaleString();
+    document.getElementById('stat-pps').textContent = stats.packets_per_sec.toFixed(1);
+    document.getElementById('stat-rate').textContent = stats.attack_rate.toFixed(2) + '%';
+    document.getElementById('active-flows').textContent = stats.active_flows;
+
+    updateCharts(stats);
+}
+
+// Add flow to table
+function addFlow(flow) {
+    flows.unshift(flow);
+    if (flows.length > MAX_FLOWS) {
+        flows.pop();
+    }
+    renderFlows();
+}
+
+// Render flows table
+function renderFlows() {
+    const tbody = document.getElementById('flows-body');
+    const attacksOnly = document.getElementById('attacks-only').checked;
+
+    let displayFlows = attacksOnly ? flows.filter(f => f.is_attack) : flows;
+
+    if (displayFlows.length === 0) {
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No flows to display</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = displayFlows.map(flow => {
+        const time = flow.timestamp ? new Date(flow.timestamp).toLocaleTimeString() : '-';
+        const status = flow.is_attack ?
+            '<span class="badge badge-danger">ATTACK</span>' :
+            '<span class="badge badge-success">BENIGN</span>';
+        const proto = {6: 'TCP', 17: 'UDP', 1: 'ICMP'}[flow.protocol] || flow.protocol;
+
+        return `<tr class="${flow.is_attack ? 'row-attack' : ''}">
+            <td>${time}</td>
+            <td>${status}</td>
+            <td>${flow.src_ip}:${flow.src_port}</td>
+            <td>${flow.dst_ip}:${flow.dst_port}</td>
+            <td>${proto}</td>
+            <td>${(flow.confidence * 100).toFixed(1)}%</td>
+            <td>${flow.packets}</td>
+        </tr>`;
+    }).join('');
+}
+
+// Start capture
+async function startCapture() {
+    const iface = document.getElementById('interface-select').value;
+    const threshold = parseFloat(document.getElementById('threshold-input').value);
+
+    if (!iface) {
+        alert('Please select a network interface');
+        return;
+    }
+
+    try {
+        const response = await fetch('/realtime/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({interface: iface, threshold: threshold})
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            isRunning = true;
+            updateUI();
+            startEventStream();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    } catch (e) {
+        alert('Error starting capture: ' + e.message);
+    }
+}
+
+// Stop capture
+async function stopCapture() {
+    try {
+        await fetch('/realtime/stop', {method: 'POST'});
+    } catch (e) {
+        console.error('Error stopping:', e);
+    }
+
+    isRunning = false;
+    updateUI();
+
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+}
+
+// Start SSE stream
+function startEventStream() {
+    if (eventSource) {
+        eventSource.close();
+    }
+
+    eventSource = new EventSource('/realtime/events');
+
+    eventSource.onmessage = function(e) {
+        try {
+            const event = JSON.parse(e.data);
+
+            if (event.type === 'stats') {
+                updateStats(event.data);
+            } else if (event.type === 'flow') {
+                addFlow(event.data);
+            } else if (event.type === 'attack') {
+                // Flash attack indicator
+                document.getElementById('stat-attacks').classList.add('flash');
+                setTimeout(() => {
+                    document.getElementById('stat-attacks').classList.remove('flash');
+                }, 500);
+            }
+        } catch (e) {
+            console.error('Error parsing event:', e);
+        }
+    };
+
+    eventSource.onerror = function() {
+        console.log('SSE connection error');
+    };
+}
+
+// Update UI based on running state
+function updateUI() {
+    const indicator = document.getElementById('status-indicator');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const ifaceSelect = document.getElementById('interface-select');
+
+    if (isRunning) {
+        indicator.className = 'status-indicator online';
+        indicator.querySelector('.status-text').textContent = 'Running';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        ifaceSelect.disabled = true;
+    } else {
+        indicator.className = 'status-indicator offline';
+        indicator.querySelector('.status-text').textContent = 'Offline';
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        ifaceSelect.disabled = false;
+    }
+}
+
+// Event listeners
+document.getElementById('start-btn').addEventListener('click', startCapture);
+document.getElementById('stop-btn').addEventListener('click', stopCapture);
+document.getElementById('attacks-only').addEventListener('change', renderFlows);
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    initCharts();
+});
+</script>
+{% endblock %}
