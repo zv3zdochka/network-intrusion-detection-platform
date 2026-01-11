@@ -1,5 +1,5 @@
 """
-Основной pipeline для анализа трафика в реальном времени
+Main pipeline for real-time traffic analysis
 """
 
 import time
@@ -18,7 +18,7 @@ from .analyzer import TrafficAnalyzer, create_dummy_analyzer
 
 @dataclass
 class AnalysisResult:
-    """Результат анализа потока"""
+    """Flow analysis result"""
     flow_id: str
     src_ip: str
     dst_ip: str
@@ -39,22 +39,22 @@ class AnalysisResult:
 
 class RealtimePipeline:
     """
-    Pipeline для анализа сетевого трафика в реальном времени
+    Pipeline for real-time network traffic analysis
     """
 
     def __init__(
-        self,
-        interface: Optional[str] = None,
-        model_path: Optional[str] = None,
-        preprocessor_path: Optional[str] = None,
-        feature_schema_path: Optional[str] = None,
-        bpf_filter: Optional[str] = None,
-        flow_timeout: float = 120.0,
-        analysis_interval: float = 5.0,
-        threshold: float = 0.5,
-        on_attack_detected: Optional[Callable[[AnalysisResult], None]] = None,
-        on_flow_analyzed: Optional[Callable[[AnalysisResult], None]] = None,
-        debug: bool = False
+            self,
+            interface: Optional[str] = None,
+            model_path: Optional[str] = None,
+            preprocessor_path: Optional[str] = None,
+            feature_schema_path: Optional[str] = None,
+            bpf_filter: Optional[str] = None,
+            flow_timeout: float = 120.0,
+            analysis_interval: float = 5.0,
+            threshold: float = 0.5,
+            on_attack_detected: Optional[Callable[[AnalysisResult], None]] = None,
+            on_flow_analyzed: Optional[Callable[[AnalysisResult], None]] = None,
+            debug: bool = False
     ):
         self.debug = debug
 
@@ -62,7 +62,7 @@ class RealtimePipeline:
         self.on_attack_detected = on_attack_detected
         self.on_flow_analyzed = on_flow_analyzed
 
-        # Компоненты
+        # Components
         self.packet_queue = queue.Queue(maxsize=10000)
 
         self.capture = PacketCapture(
@@ -78,11 +78,11 @@ class RealtimePipeline:
 
         self.feature_extractor = FeatureExtractor()
 
-        # Загружаем feature_schema если есть
+        # Load feature schema if provided
         if feature_schema_path:
             self._load_feature_schema(feature_schema_path)
 
-        # Анализатор
+        # Analyzer
         if model_path:
             self.analyzer = TrafficAnalyzer(
                 model_path=model_path,
@@ -93,21 +93,21 @@ class RealtimePipeline:
         else:
             self.analyzer = create_dummy_analyzer()
 
-        # Параметры
+        # Parameters
         self.analysis_interval = analysis_interval
 
-        # Потоки
+        # Threads
         self._running = False
         self._processing_thread: Optional[threading.Thread] = None
         self._analysis_thread: Optional[threading.Thread] = None
 
-        # Результаты
+        # Results
         self._results_queue = queue.Queue(maxsize=1000)
         self._recent_results: List[AnalysisResult] = []
         self._max_results = 1000
         self._lock = threading.Lock()
 
-        # Статистика
+        # Statistics
         self._stats = {
             'start_time': None,
             'packets_processed': 0,
@@ -116,11 +116,11 @@ class RealtimePipeline:
             'analysis_errors': 0
         }
 
-        # Отладка
+        # Debug
         self._first_flow_logged = False
 
     def _load_feature_schema(self, schema_path: str):
-        """Загружает схему признаков и обновляет feature_extractor"""
+        """Loads the feature schema and updates the feature_extractor"""
         import json
         try:
             with open(schema_path, 'r') as f:
@@ -134,31 +134,32 @@ class RealtimePipeline:
             print(f"  Warning: Could not load feature schema: {e}")
 
     def _on_flow_complete(self, flow_data: Dict[str, Any]):
-        """Callback при завершении потока"""
+        """Callback when a flow is completed"""
         self._analyze_flow(flow_data)
 
     def _analyze_flow(self, flow_data: Dict[str, Any]) -> Optional[AnalysisResult]:
-        """Анализирует поток"""
+        """Analyzes a flow"""
         try:
-            # Отладка первого потока
+            # Debug first flow
             if self.debug and not self._first_flow_logged:
-                print(f"\n[DEBUG] First flow data:")
+                print("\n[DEBUG] First flow data:")
                 print(f"  src: {flow_data.get('src_ip')}:{flow_data.get('src_port')}")
                 print(f"  dst: {flow_data.get('dst_ip')}:{flow_data.get('dst_port')}")
                 print(f"  packets: {flow_data.get('total_packets')}")
                 print(f"  duration: {flow_data.get('duration')}")
 
-            # Извлекаем признаки
+            # Extract features
             features = self.feature_extractor.extract(flow_data)
             features_array = self.feature_extractor.extract_array(flow_data)
 
             if self.debug and not self._first_flow_logged:
                 print(f"  features shape: {features_array.shape}")
-                print(f"  expected features: {self.analyzer.n_features if hasattr(self.analyzer, 'n_features') else 'unknown'}")
+                print(
+                    f"  expected features: {self.analyzer.n_features if hasattr(self.analyzer, 'n_features') else 'unknown'}")
                 print(f"  first 5 features: {features_array[:5]}")
                 self._first_flow_logged = True
 
-            # Предсказание
+            # Prediction
             prediction = self.analyzer.predict(features_array)
 
             if 'error' in prediction:
@@ -167,7 +168,7 @@ class RealtimePipeline:
                 self._stats['analysis_errors'] += 1
                 return None
 
-            # Результат
+            # Result
             result = AnalysisResult(
                 flow_id=str(flow_data.get('flow_key', '')),
                 src_ip=flow_data.get('src_ip', ''),
@@ -187,7 +188,7 @@ class RealtimePipeline:
                 features=features
             )
 
-            # Сохраняем
+            # Store
             with self._lock:
                 self._recent_results.append(result)
                 if len(self._recent_results) > self._max_results:
@@ -219,7 +220,7 @@ class RealtimePipeline:
             return None
 
     def _packet_processing_loop(self):
-        """Цикл обработки пакетов"""
+        """Packet processing loop"""
         while self._running:
             try:
                 packet = self.packet_queue.get(timeout=0.1)
@@ -232,28 +233,28 @@ class RealtimePipeline:
                     print(f"Error processing packet: {e}")
 
     def _periodic_analysis_loop(self):
-        """Периодический анализ активных потоков"""
+        """Periodic analysis of active flows"""
         while self._running:
             time.sleep(self.analysis_interval)
 
-            # Проверяем таймауты
+            # Check timeouts
             completed = self.aggregator.check_timeouts()
 
             if self.debug and completed:
                 print(f"[DEBUG] Completed {len(completed)} flows by timeout")
 
-            # Анализируем активные потоки с достаточным количеством пакетов
+            # Analyze active flows with a sufficient packet count
             active_flows = self.aggregator.get_active_flows()
 
             if self.debug and active_flows:
                 print(f"[DEBUG] Active flows: {len(active_flows)}")
 
             for flow_data in active_flows:
-                if flow_data.get('total_packets', 0) >= 5:  # Снизил порог
+                if flow_data.get('total_packets', 0) >= 5:  # Lowered threshold
                     self._analyze_flow(flow_data)
 
     def start(self):
-        """Запускает pipeline"""
+        """Starts the pipeline"""
         if self._running:
             return
 
@@ -280,7 +281,7 @@ class RealtimePipeline:
         print("Realtime pipeline started")
 
     def stop(self):
-        """Останавливает pipeline"""
+        """Stops the pipeline"""
         self._running = False
         self.capture.stop()
         self.aggregator.stop_cleanup_thread()

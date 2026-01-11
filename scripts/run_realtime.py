@@ -23,7 +23,11 @@ warnings.filterwarnings('ignore', category=UserWarning, module='xgboost')
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 IS_WINDOWS = platform.system() == 'Windows'
-sys.path.insert(0, '.')
+
+# Добавляем корень проекта в путь
+SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from realtime import RealtimePipeline
 from realtime.capture import PacketCapture
@@ -37,8 +41,16 @@ results_saver = None
 class ResultsSaver:
     """Сохраняет результаты в файлы"""
 
-    def __init__(self, output_dir: str = "realtime_testing_artifacts"):
-        self.output_dir = Path(output_dir)
+    def __init__(self, output_dir: str = None):
+        # Путь относительно корня проекта
+        if output_dir is None:
+            output_dir = PROJECT_ROOT / "realtime_testing_artifacts"
+        else:
+            output_dir = Path(output_dir)
+            if not output_dir.is_absolute():
+                output_dir = PROJECT_ROOT / output_dir
+
+        self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Создаём папку для текущей сессии
@@ -351,9 +363,12 @@ def print_flow_result(result):
     proto = protocol_name(result.protocol)
     ts = datetime.now().strftime('%H:%M:%S')
 
+    # Показываем вероятность атаки
+    attack_prob = result.probabilities.get('probability', 0)
+
     print(f"{ts} {status} {result.src_ip:>15}:{result.src_port:<5} -> "
           f"{result.dst_ip:>15}:{result.dst_port:<5} {proto:4} "
-          f"{result.confidence:5.1%} {result.total_packets:5}pkts")
+          f"conf={result.confidence:4.1%} prob={attack_prob:4.2%} {result.total_packets:4}pkts")
 
 
 def check_admin():
@@ -368,17 +383,16 @@ def check_admin():
 
 def find_artifacts(model_path: Path):
     model_dir = model_path.parent
-    project_root = Path('.')
 
     prep_paths = [
         model_dir / 'preprocessor.joblib',
-        project_root / 'artifacts' / 'preprocessor.joblib',
+        PROJECT_ROOT / 'artifacts' / 'preprocessor.joblib',
     ]
     preprocessor = next((p for p in prep_paths if p.exists()), None)
 
     schema_paths = [
         model_dir / 'feature_schema.json',
-        project_root / 'artifacts' / 'feature_schema.json',
+        PROJECT_ROOT / 'artifacts' / 'feature_schema.json',
     ]
     schema = next((p for p in schema_paths if p.exists()), None)
 
@@ -405,7 +419,6 @@ def select_interface():
 
     for i, iface in enumerate(main_interfaces):
         name = iface.get('name', 'unknown')
-        desc = iface.get('description', '')[:40]
         ips = [ip for ip in iface.get('ips', [])
                if not ip.startswith('169.254') and not ip.startswith('fe80')]
         print(f"  [{i}] {name}: {', '.join(ips[:2])}")
@@ -439,7 +452,7 @@ def main():
     parser = argparse.ArgumentParser(description='Real-time Traffic Analyzer')
     parser.add_argument('-i', '--interface', type=str)
     parser.add_argument('-m', '--model', type=str,
-                        default='training_artifacts/best_model_XGB_regularized.joblib')
+                        default=str(PROJECT_ROOT / 'training_artifacts' / 'best_model_XGB_regularized.joblib'))
     parser.add_argument('-p', '--preprocessor', type=str)
     parser.add_argument('-s', '--schema', type=str)
     parser.add_argument('-t', '--threshold', type=float, default=0.5)
@@ -466,6 +479,9 @@ def main():
 
     # Model
     model_path = Path(args.model)
+    if not model_path.is_absolute():
+        model_path = PROJECT_ROOT / model_path
+
     if not model_path.exists():
         print(f"Model not found: {model_path}")
         return
