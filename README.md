@@ -1,8 +1,9 @@
+
 # Network Intrusion Detection System
 
 A machine learning-based network intrusion detection system trained on the CIC-IDS-2017 dataset. This project implements a complete ML pipeline from raw data processing to model training and ensemble creation.
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Python](https://img.shields.io/badge/Python-3.12%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![ML](https://img.shields.io/badge/ML-XGBoost%20%7C%20LightGBM%20%7C%20RF-orange)
 
@@ -15,6 +16,7 @@ A machine learning-based network intrusion detection system trained on the CIC-I
 - [Data Pipeline](#data-pipeline)
 - [Model Training](#model-training)
 - [Results](#results)
+- [Testing & Simulation](#testing--simulation)
 - [Usage](#usage)
 - [References](#references)
 
@@ -31,6 +33,8 @@ This project develops a binary classification system to detect malicious network
 - **GPU-accelerated training**: CUDA support for XGBoost, LightGBM, and PyTorch
 - **Ensemble methods**: Weighted soft voting across top-performing models
 - **Comprehensive EDA**: Automated generation of visualizations and audit reports
+- **Simulation pipeline**: Real-time flow replay with metrics collection and visualization
+- **End-to-end testing**: Unit tests and E2E tests for all pipeline components
 
 ---
 
@@ -93,7 +97,8 @@ TraficAnalysis/
 │
 ├── configs/                        # Configuration files
 │   ├── data_pipeline.yaml          # Data processing parameters
-│   └── model_configs.yaml          # Model hyperparameters
+│   ├── model_configs.yaml          # Model hyperparameters
+│   └── simulation.yaml             # Simulation settings
 │
 ├── data/
 │   ├── raw/                        # Original CSV files
@@ -121,16 +126,19 @@ TraficAnalysis/
 │   │   ├── 03_class_imbalance_log.png
 │   │   ├── 04_correlation_matrix.png
 │   │   └── 05_feature_distributions.png
+│   ├── simulation/                 # Simulation results
+│   │   ├── confusion_matrix_*.png
+│   │   ├── dashboard_*.png
+│   │   ├── metrics_timeline_*.png
+│   │   ├── throughput_timeline_*.png
+│   │   └── simulation_report_*.json
 │   └── audit_report.json           # Data quality report
 │
 ├── scripts/                        # Pipeline scripts
-│   ├── 00_merge_raw_csv.py
-│   ├── 01_manifest.py
-│   ├── 02_ingest_bronze.py
-│   ├── 03_audit_eda.py
-│   ├── 04_build_processed.py
-│   ├── 05_make_splits.py
-│   └── train_models.py
+│   ├── run_data_pipeline.py        # Main data pipeline
+│   ├── run_simulation.py           # Simulation runner
+│   ├── run_e2e_test.py             # End-to-end tests
+│   └── train_models.py             # Model training
 │
 ├── src/                            # Source code
 │   ├── data/                       # Data processing modules
@@ -140,14 +148,30 @@ TraficAnalysis/
 │   │   ├── ingest.py               # Data loading
 │   │   ├── manifest.py             # Manifest creation
 │   │   └── splits.py               # Train/val/test splitting
-│   └── models/                     # Model implementations
-│       ├── base.py                 # Base model class
-│       ├── random_forest.py
-│       ├── xgboost_model.py
-│       ├── lightgbm_model.py
-│       ├── neural_net.py
-│       ├── ensemble.py             # Ensemble methods
-│       └── metrics.py              # Evaluation metrics
+│   ├── models/                     # Model implementations
+│   │   ├── base.py                 # Base model class
+│   │   ├── random_forest.py
+│   │   ├── xgboost_model.py
+│   │   ├── lightgbm_model.py
+│   │   ├── neural_net.py
+│   │   ├── ensemble.py             # Ensemble methods
+│   │   └── metrics.py              # Evaluation metrics
+│   ├── inference/                  # Inference pipeline
+│   │   ├── predictor.py            # Model prediction
+│   │   └── pipeline.py             # Full inference pipeline
+│   ├── simulation/                 # Simulation components
+│   │   ├── replay.py               # Flow replay from dataset
+│   │   ├── runner.py               # Simulation orchestrator
+│   │   └── metrics_collector.py    # Metrics aggregation
+│   ├── database/                   # Database storage
+│   │   ├── models.py               # SQLAlchemy ORM models
+│   │   └── repository.py           # CRUD operations
+│   └── visualization/              # Reporting and charts
+│       └── reports.py              # Visualization generation
+│
+├── tests/                          # Unit tests
+│   ├── test_inference.py
+│   └── test_replay.py
 │
 ├── training_artifacts/             # Trained models
 │   ├── best_model_XGB_regularized.joblib
@@ -156,7 +180,6 @@ TraficAnalysis/
 │   ├── experiment_results.csv
 │   └── feature_importance.csv
 │
-├── run_data_pipeline.py            # Main pipeline runner
 ├── requirements.txt
 └── LICENSE
 ```
@@ -165,12 +188,14 @@ TraficAnalysis/
 
 | File/Directory | Description |
 |----------------|-------------|
-| `run_data_pipeline.py` | Main entry point for data processing pipeline |
-| `configs/data_pipeline.yaml` | All data processing configurations |
-| `src/data/*.py` | Modular data processing functions |
-| `src/models/*.py` | Model class implementations |
-| `notebooks/*.ipynb` | Google Colab training notebook |
-| `training_artifacts/` | Saved models and training results |
+| `scripts/run_data_pipeline.py` | Main entry point for data processing pipeline |
+| `scripts/run_simulation.py` | Flow simulation with metrics and visualization |
+| `scripts/run_e2e_test.py` | End-to-end test suite |
+| `configs/simulation.yaml` | Simulation configuration |
+| `src/inference/*.py` | Model loading and prediction |
+| `src/simulation/*.py` | Flow replay and metrics collection |
+| `src/database/*.py` | SQLite storage for simulation results |
+| `src/visualization/*.py` | Chart generation for reports |
 
 ---
 
@@ -178,7 +203,7 @@ TraficAnalysis/
 
 ### Requirements
 
-- Python 3.10+
+- Python 3.12+
 - 8GB+ RAM (16GB recommended)
 - GPU with CUDA support (optional, for faster training)
 
@@ -199,24 +224,6 @@ source .venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### Dependencies
-
-```
-pandas>=2.0.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
-xgboost>=2.0.0
-lightgbm>=4.0.0
-torch>=2.0.0
-plotly>=5.18.0
-pyarrow>=14.0.0
-pyyaml>=6.0.1
-joblib>=1.3.0
-tqdm>=4.66.0
-```
-
----
-
 ## Data Pipeline
 
 The data pipeline transforms raw CSV files into model-ready datasets through the following stages:
@@ -231,11 +238,11 @@ Raw CSV → Bronze (merged) → Cleaned → Preprocessed → Train/Val/Test Spli
 
 ```bash
 # Run complete pipeline
-python run_data_pipeline.py
+python scripts/run_data_pipeline.py
 
 # Run specific steps
-python run_data_pipeline.py --steps 1,2,3    # Manifest, ingest, EDA
-python run_data_pipeline.py --steps 4,5      # Clean and split
+python scripts/run_data_pipeline.py --steps 1,2,3    # Manifest, ingest, EDA
+python scripts/run_data_pipeline.py --steps 4,5      # Clean and split
 ```
 
 ### Processing Steps
@@ -428,6 +435,251 @@ These results are consistent with published literature but may not reflect real-
 
 ---
 
+## Testing & Simulation
+
+This project includes a comprehensive testing and simulation framework to validate the end-to-end pipeline before deployment.
+
+### Running Tests
+
+#### Unit Tests
+
+```bash
+# Run all unit tests
+pytest tests/ -v
+```
+
+**Test Coverage:**
+
+| Test Module | Tests | Description |
+|-------------|-------|-------------|
+| `test_inference.py` | 6 | Model loading, single/batch prediction, pipeline |
+| `test_replay.py` | 6 | Data loading, batching, iteration, attack sampling |
+
+**Expected Output:**
+```
+tests/test_inference.py::TestPredictor::test_load PASSED
+tests/test_inference.py::TestPredictor::test_predict_single PASSED
+tests/test_inference.py::TestPredictor::test_predict_batch PASSED
+tests/test_inference.py::TestInferencePipeline::test_process_flow PASSED
+tests/test_inference.py::TestInferencePipeline::test_process_batch PASSED
+tests/test_inference.py::TestInferencePipeline::test_metrics_calculation PASSED
+tests/test_replay.py::TestFlowReplay::test_load PASSED
+tests/test_replay.py::TestFlowReplay::test_get_batch PASSED
+tests/test_replay.py::TestFlowReplay::test_iter_batches PASSED
+tests/test_replay.py::TestFlowReplay::test_progress PASSED
+tests/test_replay.py::TestFlowReplay::test_reset PASSED
+tests/test_replay.py::TestFlowReplay::test_get_attack_samples PASSED
+
+12 passed in 6.06s
+```
+
+#### End-to-End Tests
+
+```bash
+# Run E2E test suite
+python scripts/run_e2e_test.py
+```
+
+**E2E Test Components:**
+
+| Test | Description | Validates |
+|------|-------------|-----------|
+| Model Loading | Load trained XGBoost model | Model file integrity |
+| Data Loading | Load test parquet data | Data pipeline output |
+| Single Inference | Predict one flow | Predictor functionality |
+| Batch Inference | Predict 1000 flows | Batch processing |
+| Inference Pipeline | Process 5 batches | Full pipeline integration |
+| Metrics Collector | Aggregate statistics | Metrics calculation |
+| Database Operations | CRUD operations | SQLite storage |
+| No Data Loss | Verify flow counts | Pipeline integrity |
+
+**Expected Output:**
+```
+======================================================================
+E2E TEST SUITE
+======================================================================
+
+Running: Model Loading... PASSED (1.80s)
+Running: Data Loading... PASSED (0.58s)
+Running: Single Inference... PASSED (0.42s)
+Running: Batch Inference... PASSED (0.48s)
+Running: Inference Pipeline... PASSED (0.42s)
+Running: Metrics Collector... PASSED (1.01s)
+Running: Database Operations... PASSED (0.15s)
+Running: No Data Loss... PASSED (0.45s)
+
+======================================================================
+SUMMARY
+======================================================================
+Passed: 8/8
+Failed: 0/8
+
+All tests passed!
+```
+
+### Flow Simulation
+
+The simulation pipeline replays flows from the test dataset through the trained model, collecting real-time metrics.
+
+#### Running Simulation
+
+```bash
+# Full test dataset simulation
+python scripts/run_simulation.py
+
+# Fast simulation with limits
+python scripts/run_simulation.py --speed 5 --max-flows 50000
+
+# Use validation set, skip database
+python scripts/run_simulation.py --source val --no-db
+
+# Quiet mode with custom output
+python scripts/run_simulation.py --quiet --output results.json
+```
+
+#### Simulation Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--source` | test | Data source: train, val, test |
+| `--speed` | 1.0 | Replay speed multiplier |
+| `--batch-size` | 100 | Flows per batch |
+| `--max-flows` | None | Limit total flows |
+| `--max-duration` | None | Limit time in seconds |
+| `--no-db` | False | Skip database storage |
+| `--no-viz` | False | Skip visualization generation |
+
+### Simulation Results
+
+#### Full Test Dataset (424,581 flows)
+
+```
+======================================================================
+SIMULATION COMPLETED
+======================================================================
+
+Summary:
+  Total flows processed: 424,581
+  Total alerts generated: 83,720
+  Elapsed time: 8.56 seconds
+  Throughput: 49,590 flows/sec
+
+Classification Metrics:
+  Precision: 0.9990
+  Recall:    0.9998
+  F1 Score:  0.9994
+  Accuracy:  0.9998
+
+Confusion Matrix:
+                    Predicted
+                    Benign      Attack
+Actual Benign      340,847          87
+Actual Attack           14      83,633
+
+Latency (ms):
+  p50: 0.01
+  p95: 0.01
+  p99: 0.02
+  Max: 1.82
+```
+
+#### Performance Summary
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Throughput | ~50,000 flows/sec | Production-ready |
+| Latency p99 | 0.02ms | Suitable for real-time |
+| False Positives | 87 | 0.026% of benign traffic |
+| False Negatives | 14 | 0.017% of attacks missed |
+| Total Errors | 101 | 0.024% error rate |
+
+### Simulation Visualizations
+
+The simulation generates comprehensive visualizations saved to `reports/simulation/`:
+
+#### Summary Dashboard
+
+Combined view of all key metrics in a single dashboard:
+
+![Dashboard](reports/simulation/dashboard_5.png)
+
+#### Confusion Matrix
+
+Detailed breakdown of predictions vs actual labels:
+
+![Confusion Matrix](reports/simulation/confusion_matrix_5.png)
+
+#### Classification Metrics
+
+Bar chart comparing precision, recall, F1, and accuracy:
+
+![Classification Metrics](reports/simulation/classification_metrics_5.png)
+
+#### Metrics Over Time
+
+Tracking precision, recall, and F1 as data streams through:
+
+![Metrics Timeline](reports/simulation/metrics_timeline_5.png)
+
+#### Throughput Over Time
+
+Flows processed per second and cumulative count:
+
+![Throughput Timeline](reports/simulation/throughput_timeline_5.png)
+
+#### Alerts Over Time
+
+Alert generation rate and TP/FP accumulation:
+
+![Alerts Timeline](reports/simulation/alerts_timeline_5.png)
+
+#### Latency Distribution
+
+Inference latency percentiles over time:
+
+![Latency Timeline](reports/simulation/latency_timeline_5.png)
+
+### Real-Time Metrics Snapshots
+
+The simulation captures periodic snapshots showing metrics evolution:
+
+| Time (s) | Flows | Flows/sec | Alerts | F1 | Precision | Recall |
+|----------|-------|-----------|--------|-----|-----------|--------|
+| 1.0 | 54,900 | 54,868 | 10,956 | 0.9996 | 0.9993 | 0.9999 |
+| 2.0 | 114,100 | 59,166 | 22,568 | 0.9996 | 0.9992 | 0.9999 |
+| 3.0 | 169,900 | 54,992 | 33,614 | 0.9995 | 0.9991 | 0.9999 |
+| 4.0 | 186,300 | 16,397 | 36,887 | 0.9995 | 0.9991 | 0.9999 |
+| 5.0 | 242,500 | 55,347 | 47,995 | 0.9994 | 0.9990 | 0.9999 |
+| 6.0 | 294,900 | 51,719 | 58,348 | 0.9994 | 0.9990 | 0.9999 |
+| 7.0 | 350,300 | 55,264 | 69,222 | 0.9994 | 0.9990 | 0.9999 |
+| 8.0 | 405,200 | 54,061 | 79,891 | 0.9994 | 0.9990 | 0.9998 |
+| 8.5 | 424,581 | 46,088 | 83,720 | 0.9994 | 0.9990 | 0.9998 |
+
+**Key Observations:**
+- F1 score remains stable at ~0.9994 throughout the simulation
+- Throughput averages ~50,000 flows/sec with occasional dips
+- Precision and recall stay consistently high (>0.999)
+- No degradation over time indicates model stability
+
+### Generated Artifacts
+
+Each simulation run produces:
+
+| File | Description |
+|------|-------------|
+| `simulation_report_N.json` | Full metrics report |
+| `simulation_report_N.txt` | Human-readable summary |
+| `snapshots_N.json` | Time-series metrics data |
+| `confusion_matrix_N.png` | Confusion matrix heatmap |
+| `dashboard_N.png` | Combined dashboard |
+| `metrics_timeline_N.png` | F1/Precision/Recall over time |
+| `throughput_timeline_N.png` | Flows/sec over time |
+| `alerts_timeline_N.png` | Alert generation over time |
+| `latency_timeline_N.png` | Latency percentiles over time |
+| `classification_metrics_N.png` | Metrics bar chart |
+
+---
+
 ## Usage
 
 ### Loading a Trained Model
@@ -491,6 +743,67 @@ def ensemble_predict(X):
     return np.argmax(weighted_proba, axis=1), weighted_proba[:, 1]
 ```
 
+### Using the Inference Pipeline
+
+```python
+from src.inference import Predictor, InferencePipeline
+
+# Initialize predictor
+predictor = Predictor(
+    model_path="training_artifacts/best_model_XGB_regularized.joblib",
+    preprocessor_path="artifacts/preprocessor.joblib",
+    feature_schema_path="artifacts/feature_schema.json",
+    threshold=0.5
+)
+predictor.load()
+
+# Create pipeline
+pipeline = InferencePipeline(predictor)
+
+# Process flows
+alerts = pipeline.process_batch(
+    features=X,
+    flow_indices=list(range(len(X))),
+    true_labels=y  # Optional, for evaluation
+)
+
+# Get statistics
+stats = pipeline.get_stats()
+print(f"F1: {stats['f1']:.4f}")
+print(f"Alerts: {stats['total_alerts']}")
+```
+
+### Running a Simulation
+
+```python
+from src.inference import Predictor
+from src.simulation import FlowReplay, SimulationRunner, SimulationConfig
+
+# Setup
+predictor = Predictor(...)
+predictor.load()
+
+replay = FlowReplay(
+    data_path="data/processed/splits/test.parquet",
+    feature_cols=feature_cols,
+    batch_size=100
+)
+replay.load()
+
+config = SimulationConfig(
+    speed=5.0,
+    max_flows=10000,
+    verbose=True
+)
+
+# Run
+runner = SimulationRunner(predictor, replay, config)
+report = runner.run()
+
+print(f"Processed: {report['summary']['total_flows']}")
+print(f"F1: {report['classification']['f1']:.4f}")
+```
+
 ---
 
 ## References
@@ -520,6 +833,13 @@ International Symposium on Computer and Information Sciences (ISCIS)
 - Official: https://www.unb.ca/cic/datasets/ids-2017.html
 - Kaggle: https://www.kaggle.com/datasets/ciaboroghigiovanni/cicids2017
 
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
 
 ## Acknowledgments
 
