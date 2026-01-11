@@ -3,6 +3,7 @@
 {% block title %}Offline Analysis - Network IDS{% endblock %}
 
 {% block content %}
+
 <div class="offline-page">
     <header class="page-header">
         <h1>Offline Dataset Analysis</h1>
@@ -28,16 +29,7 @@
                 </div>
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="max-rows">Max Rows</label>
-                    <input type="number" id="max-rows" value="10000" min="100" max="1000000" class="number-input">
-                </div>
-                <div class="form-group">
-                    <label for="threshold">Threshold</label>
-                    <input type="number" id="threshold" value="0.5" min="0" max="1" step="0.1" class="number-input">
-                </div>
-            </div>
+            <!-- УДАЛЕН БЛОК div class="form-row" с полями max-rows и threshold -->
 
             <button type="submit" class="btn btn-primary btn-large" id="analyze-btn" disabled>
                 Analyze Dataset
@@ -61,7 +53,6 @@
         <div class="results-metrics" id="results-metrics" style="display: none;">
             <h3>Classification Metrics</h3>
             <div class="metrics-grid" id="metrics-grid"></div>
-
             <div class="confusion-matrix" id="confusion-matrix"></div>
         </div>
 
@@ -76,250 +67,220 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-let selectedFile = null;
-let probChart = null;
-let pollInterval = null;
+    let selectedFile = null;
+    let probChart = null;
+    let pollInterval = null;
 
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const fileSelected = document.getElementById('file-selected');
-const fileName = document.getElementById('file-name');
-const analyzeBtn = document.getElementById('analyze-btn');
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileSelected = document.getElementById('file-selected');
+    const fileName = document.getElementById('file-name');
+    const analyzeBtn = document.getElementById('analyze-btn');
 
-// File selection
-dropZone.addEventListener('click', () => fileInput.click());
+    // File selection logic (без изменений)
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) selectFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) selectFile(fileInput.files[0]);
+    });
+    document.getElementById('clear-file').addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearFile();
+    });
 
-dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('dragover');
-});
-
-dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('dragover');
-});
-
-dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-
-    if (e.dataTransfer.files.length > 0) {
-        selectFile(e.dataTransfer.files[0]);
-    }
-});
-
-fileInput.addEventListener('change', () => {
-    if (fileInput.files.length > 0) {
-        selectFile(fileInput.files[0]);
-    }
-});
-
-document.getElementById('clear-file').addEventListener('click', (e) => {
-    e.stopPropagation();
-    clearFile();
-});
-
-function selectFile(file) {
-    const ext = file.name.toLowerCase().split('.').pop();
-    if (!['csv', 'parquet'].includes(ext)) {
-        alert('Please select a CSV or Parquet file');
-        return;
-    }
-
-    selectedFile = file;
-    fileName.textContent = file.name + ' (' + formatBytes(file.size) + ')';
-    fileSelected.style.display = 'flex';
-    dropZone.querySelector('.drop-content').style.display = 'none';
-    analyzeBtn.disabled = false;
-}
-
-function clearFile() {
-    selectedFile = null;
-    fileInput.value = '';
-    fileSelected.style.display = 'none';
-    dropZone.querySelector('.drop-content').style.display = 'block';
-    analyzeBtn.disabled = true;
-}
-
-function formatBytes(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
-// Form submission
-document.getElementById('upload-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    if (!selectedFile) return;
-
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('max_rows', document.getElementById('max-rows').value);
-    formData.append('threshold', document.getElementById('threshold').value);
-
-    // Show progress
-    document.getElementById('progress-section').style.display = 'block';
-    document.getElementById('results-section').style.display = 'none';
-    document.getElementById('progress-fill').style.width = '0%';
-    document.getElementById('progress-text').textContent = 'Uploading...';
-    analyzeBtn.disabled = true;
-
-    try {
-        const response = await fetch('/offline/analyze', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.status === 'success') {
-            startPolling();
-        } else {
-            alert('Error: ' + data.message);
-            analyzeBtn.disabled = false;
+    function selectFile(file) {
+        const ext = file.name.toLowerCase().split('.').pop();
+        if (!['csv', 'parquet'].includes(ext)) {
+            alert('Please select a CSV or Parquet file');
+            return;
         }
-    } catch (e) {
-        alert('Error: ' + e.message);
+        selectedFile = file;
+        fileName.textContent = file.name + ' (' + formatBytes(file.size) + ')';
+        fileSelected.style.display = 'flex';
+        dropZone.querySelector('.drop-content').style.display = 'none';
         analyzeBtn.disabled = false;
     }
-});
 
-// Poll for progress
-function startPolling() {
-    pollInterval = setInterval(async () => {
+    function clearFile() {
+        selectedFile = null;
+        fileInput.value = '';
+        fileSelected.style.display = 'none';
+        dropZone.querySelector('.drop-content').style.display = 'block';
+        analyzeBtn.disabled = true;
+    }
+
+    function formatBytes(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // Form submission - ОБНОВЛЕНО
+    document.getElementById('upload-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!selectedFile) return;
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        // Убрали добавление max_rows и threshold
+
+        // Show progress
+        document.getElementById('progress-section').style.display = 'block';
+        document.getElementById('results-section').style.display = 'none';
+        document.getElementById('progress-fill').style.width = '0%';
+        document.getElementById('progress-text').textContent = 'Uploading...';
+        analyzeBtn.disabled = true;
+
         try {
-            const response = await fetch('/offline/progress');
+            const response = await fetch('/offline/analyze', {
+                method: 'POST',
+                body: formData
+            });
             const data = await response.json();
 
-            if (data.running) {
-                const percent = data.total > 0 ? (data.progress / data.total * 100) : 0;
-                document.getElementById('progress-fill').style.width = percent + '%';
-                document.getElementById('progress-text').textContent =
-                    `Analyzing... ${data.progress.toLocaleString()} / ${data.total.toLocaleString()} flows`;
+            if (data.status === 'success') {
+                startPolling();
             } else {
-                clearInterval(pollInterval);
-
-                if (data.error) {
-                    alert('Error: ' + data.error);
-                    document.getElementById('progress-section').style.display = 'none';
-                } else if (data.results) {
-                    showResults(data.results);
-                }
-
+                alert('Error: ' + data.message);
                 analyzeBtn.disabled = false;
             }
         } catch (e) {
-            console.error('Poll error:', e);
-        }
-    }, 500);
-}
-
-// Show results
-function showResults(results) {
-    document.getElementById('progress-section').style.display = 'none';
-    document.getElementById('results-section').style.display = 'block';
-
-    // Summary
-    const summary = document.getElementById('results-summary');
-    summary.innerHTML = `
-        <div class="summary-cards">
-            <div class="summary-card">
-                <span class="summary-value">${results.total_flows.toLocaleString()}</span>
-                <span class="summary-label">Total Flows</span>
-            </div>
-            <div class="summary-card">
-                <span class="summary-value">${results.benign_count.toLocaleString()}</span>
-                <span class="summary-label">Benign</span>
-            </div>
-            <div class="summary-card card-danger">
-                <span class="summary-value">${results.attack_count.toLocaleString()}</span>
-                <span class="summary-label">Attacks</span>
-            </div>
-            <div class="summary-card">
-                <span class="summary-value">${results.attack_rate.toFixed(2)}%</span>
-                <span class="summary-label">Attack Rate</span>
-            </div>
-        </div>
-    `;
-
-    // Metrics (if labels available)
-    const metricsSection = document.getElementById('results-metrics');
-    if (results.has_labels) {
-        metricsSection.style.display = 'block';
-
-        document.getElementById('metrics-grid').innerHTML = `
-            <div class="metric-item">
-                <span class="metric-value">${results.accuracy}%</span>
-                <span class="metric-label">Accuracy</span>
-            </div>
-            <div class="metric-item">
-                <span class="metric-value">${results.precision}%</span>
-                <span class="metric-label">Precision</span>
-            </div>
-            <div class="metric-item">
-                <span class="metric-value">${results.recall}%</span>
-                <span class="metric-label">Recall</span>
-            </div>
-            <div class="metric-item">
-                <span class="metric-value">${results.f1}%</span>
-                <span class="metric-label">F1 Score</span>
-            </div>
-        `;
-
-        document.getElementById('confusion-matrix').innerHTML = `
-            <h4>Confusion Matrix</h4>
-            <table class="matrix-table">
-                <tr>
-                    <td></td>
-                    <td class="header">Pred. Benign</td>
-                    <td class="header">Pred. Attack</td>
-                </tr>
-                <tr>
-                    <td class="header">Actual Benign</td>
-                    <td class="tn">${results.tn.toLocaleString()}</td>
-                    <td class="fp">${results.fp.toLocaleString()}</td>
-                </tr>
-                <tr>
-                    <td class="header">Actual Attack</td>
-                    <td class="fn">${results.fn.toLocaleString()}</td>
-                    <td class="tp">${results.tp.toLocaleString()}</td>
-                </tr>
-            </table>
-        `;
-    } else {
-        metricsSection.style.display = 'none';
-    }
-
-    // Probability chart
-    if (probChart) {
-        probChart.destroy();
-    }
-
-    probChart = new Chart(document.getElementById('prob-chart'), {
-        type: 'bar',
-        data: {
-            labels: results.prob_distribution.bins.slice(0, -1).map((b, i) =>
-                `${(b * 100).toFixed(0)}-${(results.prob_distribution.bins[i+1] * 100).toFixed(0)}%`
-            ),
-            datasets: [{
-                label: 'Flow Count',
-                data: results.prob_distribution.counts,
-                backgroundColor: results.prob_distribution.bins.slice(0, -1).map((b, i) =>
-                    b >= 0.5 ? 'rgba(239, 68, 68, 0.7)' : 'rgba(34, 197, 94, 0.7)'
-                ),
-                borderWidth: 0
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { display: false }
-            },
-            scales: {
-                y: { beginAtZero: true }
-            }
+            alert('Error: ' + e.message);
+            analyzeBtn.disabled = false;
         }
     });
-}
+
+    // Остальные функции (poll, showResults) оставляем без изменений,
+    // так как они отвечают только за отображение
+    function startPolling() {
+        pollInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/offline/progress');
+                const data = await response.json();
+
+                if (data.running) {
+                    const percent = data.total > 0 ? (data.progress / data.total * 100) : 0;
+                    document.getElementById('progress-fill').style.width = percent + '%';
+                    document.getElementById('progress-text').textContent = `Analyzing... ${data.progress.toLocaleString()} / ${data.total.toLocaleString()} flows`;
+                } else {
+                    clearInterval(pollInterval);
+                    if (data.error) {
+                        alert('Error: ' + data.error);
+                        document.getElementById('progress-section').style.display = 'none';
+                    } else if (data.results) {
+                        showResults(data.results);
+                    }
+                    analyzeBtn.disabled = false;
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }, 500);
+    }
+
+    function showResults(results) {
+        document.getElementById('progress-section').style.display = 'none';
+        document.getElementById('results-section').style.display = 'block';
+
+        // Summary
+        const summary = document.getElementById('results-summary');
+        summary.innerHTML = `
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <span class="summary-value">${results.total_flows.toLocaleString()}</span>
+                    <span class="summary-label">Total Flows</span>
+                </div>
+                <div class="summary-card">
+                    <span class="summary-value">${results.benign_count.toLocaleString()}</span>
+                    <span class="summary-label">Benign</span>
+                </div>
+                <div class="summary-card card-danger">
+                    <span class="summary-value">${results.attack_count.toLocaleString()}</span>
+                    <span class="summary-label">Attacks</span>
+                </div>
+                <div class="summary-card">
+                    <span class="summary-value">${results.attack_rate.toFixed(2)}%</span>
+                    <span class="summary-label">Attack Rate</span>
+                </div>
+            </div>
+        `;
+
+        // Metrics
+        const metricsSection = document.getElementById('results-metrics');
+        if (results.has_labels) {
+            metricsSection.style.display = 'block';
+            document.getElementById('metrics-grid').innerHTML = `
+                <div class="metric-item">
+                    <span class="metric-value">${results.accuracy}%</span>
+                    <span class="metric-label">Accuracy</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value">${results.precision}%</span>
+                    <span class="metric-label">Precision</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value">${results.recall}%</span>
+                    <span class="metric-label">Recall</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value">${results.f1}%</span>
+                    <span class="metric-label">F1 Score</span>
+                </div>
+            `;
+
+            document.getElementById('confusion-matrix').innerHTML = `
+                <h4>Confusion Matrix</h4>
+                <table class="matrix-table">
+                    <tr>
+                        <td></td>
+                        <td class="header">Pred. Benign</td>
+                        <td class="header">Pred. Attack</td>
+                    </tr>
+                    <tr>
+                        <td class="header">Actual Benign</td>
+                        <td class="tn">${results.tn.toLocaleString()}</td>
+                        <td class="fp">${results.fp.toLocaleString()}</td>
+                    </tr>
+                    <tr>
+                        <td class="header">Actual Attack</td>
+                        <td class="fn">${results.fn.toLocaleString()}</td>
+                        <td class="tp">${results.tp.toLocaleString()}</td>
+                    </tr>
+                </table>
+            `;
+        } else {
+            metricsSection.style.display = 'none';
+        }
+
+        // Chart
+        if (probChart) probChart.destroy();
+        probChart = new Chart(document.getElementById('prob-chart'), {
+            type: 'bar',
+            data: {
+                labels: results.prob_distribution.bins.slice(0, -1).map((b, i) =>
+                    `${(b * 100).toFixed(0)}-${(results.prob_distribution.bins[i+1] * 100).toFixed(0)}%`
+                ),
+                datasets: [{
+                    label: 'Flow Count',
+                    data: results.prob_distribution.counts,
+                    backgroundColor: results.prob_distribution.bins.slice(0, -1).map((b, i) =>
+                        b >= 0.5 ? 'rgba(239, 68, 68, 0.7)' : 'rgba(34, 197, 94, 0.7)'
+                    ),
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
 </script>
 {% endblock %}
