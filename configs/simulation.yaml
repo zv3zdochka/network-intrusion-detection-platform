@@ -1,0 +1,30 @@
+# Simulation configuration
+
+paths:
+  artifacts: "artifacts"
+  training_artifacts: "training_artifacts"
+  data: "data/processed/splits"
+  database: "data/simulation.db"
+  reports: "reports/simulation"
+
+model:
+  name: "best_model_XGB_regularized.joblib"
+  threshold: 0.5
+
+simulation:
+  default_speed: 1.0
+  batch_size: 100
+  max_flows: null  # null = no limit
+  default_duration: null  # null = process all data
+
+replay:
+  source: "test"  # train, val, test
+  shuffle: false
+
+metrics:
+  update_interval: 1.0  # seconds
+  percentiles: [50, 95, 99]
+
+database:
+  enabled: true
+  echo: false  # SQL logging
