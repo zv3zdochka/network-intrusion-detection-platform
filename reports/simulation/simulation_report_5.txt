@@ -1,0 +1,36 @@
+
+================================================================================
+SIMULATION REPORT (Run #5)
+Generated: 2026-01-11 13:45:46
+================================================================================
+
+SUMMARY
+-------
+Total Flows Processed: 424,581
+Total Alerts Generated: 83,720
+Elapsed Time: 8.56 seconds
+Throughput: 49590 flows/sec
+
+CLASSIFICATION METRICS
+----------------------
+Precision: 0.9990
+Recall:    0.9998
+F1 Score:  0.9994
+Accuracy:  0.9998
+
+CONFUSION MATRIX
+----------------
+                    Predicted
+                    Benign      Attack
+Actual Benign         340,847          87
+Actual Attack              14      83,633
+
+LATENCY (ms)
+------------
+p50: 0.01
+p95: 0.01
+p99: 0.02
+Mean: 0.01
+Max: 1.82
+
+================================================================================
