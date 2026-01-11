@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Add the project src directory to sys.path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data.common import load_config, setup_logging, get_project_root, ensure_dir
 from src.data.manifest import create_manifest
