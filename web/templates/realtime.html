@@ -13,6 +13,7 @@
                 <option value="{{ iface.name }}">{{ iface.name }} ({{ iface.ips|join(', ') }})</option>
                 {% endfor %}
             </select>
+            <button type="button" id="refresh-interfaces" class="btn btn-secondary" title="Refresh interfaces">↻</button>
             <input type="number" id="threshold-input" class="number-input" value="0.5" min="0" max="1" step="0.1" title="Detection Threshold">
             <button id="start-btn" class="btn btn-primary">Start Capture</button>
             <button id="stop-btn" class="btn btn-danger" disabled>Stop</button>
@@ -48,18 +49,22 @@
         </div>
     </div>
 
-    <div class="metrics-cards">
-        <div class="metric-card">
-            <h3>Traffic Rate</h3>
-            <canvas id="traffic-chart" height="120"></canvas>
+    <div class="metrics-row">
+        <div class="metric-card chart-card">
+            <h3>Traffic Rate (packets/s)</h3>
+            <div class="chart-container">
+                <canvas id="traffic-chart"></canvas>
+            </div>
         </div>
-        <div class="metric-card">
+        <div class="metric-card value-card">
             <h3>Active Flows</h3>
             <div class="metric-value" id="active-flows">0</div>
         </div>
-        <div class="metric-card">
-            <h3>Attack Rate</h3>
-            <canvas id="attack-chart" height="120"></canvas>
+        <div class="metric-card chart-card">
+            <h3>Attack Rate (%)</h3>
+            <div class="chart-container">
+                <canvas id="attack-chart"></canvas>
+            </div>
         </div>
     </div>
 
@@ -85,7 +90,7 @@
                 </thead>
                 <tbody id="flows-body">
                     <tr class="empty-row">
-                        <td colspan="7">No flows captured yet. Start the capture to begin.</td>
+                        <td colspan="7">No flows captured yet. Select an interface and start the capture.</td>
                     </tr>
                 </tbody>
             </table>
@@ -111,79 +116,96 @@ let isRunning = false;
 function initCharts() {
     const chartOptions = {
         responsive: true,
-        maintainAspectRatio: false,
+        maintainAspectRatio: true,
         animation: false,
         scales: {
             x: { display: false },
-            y: { beginAtZero: true }
+            y: {
+                beginAtZero: true,
+                ticks: { maxTicksLimit: 5 }
+            }
         },
         plugins: {
             legend: { display: false }
+        },
+        elements: {
+            point: { radius: 0 },
+            line: { borderWidth: 2 }
         }
     };
 
-    trafficChart = new Chart(document.getElementById('traffic-chart'), {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                data: [],
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                fill: true,
-                tension: 0.3,
-                pointRadius: 0
-            }]
-        },
-        options: chartOptions
-    });
+    const trafficCtx = document.getElementById('traffic-chart');
+    if (trafficCtx) {
+        trafficChart = new Chart(trafficCtx, {
+            type: 'line',
+            data: {
+                labels: Array(MAX_CHART_POINTS).fill(''),
+                datasets: [{
+                    data: Array(MAX_CHART_POINTS).fill(0),
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: chartOptions
+        });
+    }
 
-    attackChart = new Chart(document.getElementById('attack-chart'), {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                data: [],
-                borderColor: '#ef4444',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                fill: true,
-                tension: 0.3,
-                pointRadius: 0
-            }]
-        },
-        options: chartOptions
-    });
+    const attackCtx = document.getElementById('attack-chart');
+    if (attackCtx) {
+        attackChart = new Chart(attackCtx, {
+            type: 'line',
+            data: {
+                labels: Array(MAX_CHART_POINTS).fill(''),
+                datasets: [{
+                    data: Array(MAX_CHART_POINTS).fill(0),
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: chartOptions
+        });
+    }
 }
 
 // Update charts with new data
 function updateCharts(stats) {
-    const now = new Date().toLocaleTimeString();
-
-    trafficData.push(stats.packets_per_sec);
-    attackData.push(stats.attack_rate);
-
-    if (trafficData.length > MAX_CHART_POINTS) {
-        trafficData.shift();
-        attackData.shift();
+    if (trafficChart) {
+        trafficData.push(stats.packets_per_sec || 0);
+        if (trafficData.length > MAX_CHART_POINTS) {
+            trafficData.shift();
+        }
+        trafficChart.data.datasets[0].data = [...trafficData];
+        while (trafficChart.data.datasets[0].data.length < MAX_CHART_POINTS) {
+            trafficChart.data.datasets[0].data.unshift(0);
+        }
+        trafficChart.update('none');
     }
 
-    trafficChart.data.labels = trafficData.map((_, i) => i);
-    trafficChart.data.datasets[0].data = trafficData;
-    trafficChart.update('none');
-
-    attackChart.data.labels = attackData.map((_, i) => i);
-    attackChart.data.datasets[0].data = attackData;
-    attackChart.update('none');
+    if (attackChart) {
+        attackData.push(stats.attack_rate || 0);
+        if (attackData.length > MAX_CHART_POINTS) {
+            attackData.shift();
+        }
+        attackChart.data.datasets[0].data = [...attackData];
+        while (attackChart.data.datasets[0].data.length < MAX_CHART_POINTS) {
+            attackChart.data.datasets[0].data.unshift(0);
+        }
+        attackChart.update('none');
+    }
 }
 
 // Update stats display
 function updateStats(stats) {
-    document.getElementById('stat-packets').textContent = stats.packets.toLocaleString();
-    document.getElementById('stat-flows').textContent = stats.flows.toLocaleString();
-    document.getElementById('stat-attacks').textContent = stats.attacks.toLocaleString();
-    document.getElementById('stat-pps').textContent = stats.packets_per_sec.toFixed(1);
-    document.getElementById('stat-rate').textContent = stats.attack_rate.toFixed(2) + '%';
-    document.getElementById('active-flows').textContent = stats.active_flows;
+    document.getElementById('stat-packets').textContent = (stats.packets || 0).toLocaleString();
+    document.getElementById('stat-flows').textContent = (stats.flows || 0).toLocaleString();
+    document.getElementById('stat-attacks').textContent = (stats.attacks || 0).toLocaleString();
+    document.getElementById('stat-pps').textContent = (stats.packets_per_sec || 0).toFixed(1);
+    document.getElementById('stat-rate').textContent = (stats.attack_rate || 0).toFixed(2) + '%';
+    document.getElementById('active-flows').textContent = stats.active_flows || 0;
 
     updateCharts(stats);
 }
@@ -209,7 +231,7 @@ function renderFlows() {
         return;
     }
 
-    tbody.innerHTML = displayFlows.map(flow => {
+    tbody.innerHTML = displayFlows.slice(0, MAX_FLOWS).map(flow => {
         const time = flow.timestamp ? new Date(flow.timestamp).toLocaleTimeString() : '-';
         const status = flow.is_attack ?
             '<span class="badge badge-danger">ATTACK</span>' :
@@ -222,10 +244,41 @@ function renderFlows() {
             <td>${flow.src_ip}:${flow.src_port}</td>
             <td>${flow.dst_ip}:${flow.dst_port}</td>
             <td>${proto}</td>
-            <td>${(flow.confidence * 100).toFixed(1)}%</td>
-            <td>${flow.packets}</td>
+            <td>${((flow.confidence || 0) * 100).toFixed(1)}%</td>
+            <td>${flow.packets || 0}</td>
         </tr>`;
     }).join('');
+}
+
+// Refresh interfaces list
+async function refreshInterfaces() {
+    try {
+        const response = await fetch('/realtime/interfaces');
+        const interfaces = await response.json();
+
+        const select = document.getElementById('interface-select');
+        const currentValue = select.value;
+
+        select.innerHTML = '<option value="">Select Interface</option>';
+        interfaces.forEach(iface => {
+            const option = document.createElement('option');
+            option.value = iface.name;
+            option.textContent = `${iface.name} (${iface.ips.join(', ')})`;
+            select.appendChild(option);
+        });
+
+        // Restore selection if still available
+        if (currentValue) {
+            select.value = currentValue;
+        }
+
+        if (interfaces.length === 0) {
+            alert('No network interfaces found. Make sure Npcap is installed and you are running as Administrator.');
+        }
+    } catch (e) {
+        console.error('Error refreshing interfaces:', e);
+        alert('Error loading interfaces: ' + e.message);
+    }
 }
 
 // Start capture
@@ -238,6 +291,9 @@ async function startCapture() {
         return;
     }
 
+    document.getElementById('start-btn').disabled = true;
+    document.getElementById('start-btn').textContent = 'Starting...';
+
     try {
         const response = await fetch('/realtime/start', {
             method: 'POST',
@@ -249,18 +305,27 @@ async function startCapture() {
 
         if (data.status === 'success') {
             isRunning = true;
+            flows = [];
+            trafficData = [];
+            attackData = [];
             updateUI();
             startEventStream();
         } else {
-            alert('Error: ' + data.message);
+            alert('Error: ' + data.message + (data.trace ? '\n\n' + data.trace : ''));
         }
     } catch (e) {
         alert('Error starting capture: ' + e.message);
     }
+
+    document.getElementById('start-btn').textContent = 'Start Capture';
+    document.getElementById('start-btn').disabled = isRunning;
 }
 
 // Stop capture
 async function stopCapture() {
+    document.getElementById('stop-btn').disabled = true;
+    document.getElementById('stop-btn').textContent = 'Stopping...';
+
     try {
         await fetch('/realtime/stop', {method: 'POST'});
     } catch (e) {
@@ -274,6 +339,8 @@ async function stopCapture() {
         eventSource.close();
         eventSource = null;
     }
+
+    document.getElementById('stop-btn').textContent = 'Stop';
 }
 
 // Start SSE stream
@@ -289,23 +356,28 @@ function startEventStream() {
             const event = JSON.parse(e.data);
 
             if (event.type === 'stats') {
-                updateStats(event.data);
+                if (event.data.running === false && isRunning) {
+                    // Server says not running but we think we are
+                    isRunning = false;
+                    updateUI();
+                } else if (event.data.running) {
+                    updateStats(event.data);
+                }
             } else if (event.type === 'flow') {
                 addFlow(event.data);
             } else if (event.type === 'attack') {
                 // Flash attack indicator
-                document.getElementById('stat-attacks').classList.add('flash');
-                setTimeout(() => {
-                    document.getElementById('stat-attacks').classList.remove('flash');
-                }, 500);
+                const attackStat = document.getElementById('stat-attacks');
+                attackStat.classList.add('flash');
+                setTimeout(() => attackStat.classList.remove('flash'), 500);
             }
         } catch (e) {
             console.error('Error parsing event:', e);
         }
     };
 
-    eventSource.onerror = function() {
-        console.log('SSE connection error');
+    eventSource.onerror = function(e) {
+        console.log('SSE connection error, will retry...');
     };
 }
 
@@ -315,6 +387,7 @@ function updateUI() {
     const startBtn = document.getElementById('start-btn');
     const stopBtn = document.getElementById('stop-btn');
     const ifaceSelect = document.getElementById('interface-select');
+    const refreshBtn = document.getElementById('refresh-interfaces');
 
     if (isRunning) {
         indicator.className = 'status-indicator online';
@@ -322,12 +395,14 @@ function updateUI() {
         startBtn.disabled = true;
         stopBtn.disabled = false;
         ifaceSelect.disabled = true;
+        refreshBtn.disabled = true;
     } else {
         indicator.className = 'status-indicator offline';
         indicator.querySelector('.status-text').textContent = 'Offline';
         startBtn.disabled = false;
         stopBtn.disabled = true;
         ifaceSelect.disabled = false;
+        refreshBtn.disabled = false;
     }
 }
 
@@ -335,10 +410,17 @@ function updateUI() {
 document.getElementById('start-btn').addEventListener('click', startCapture);
 document.getElementById('stop-btn').addEventListener('click', stopCapture);
 document.getElementById('attacks-only').addEventListener('change', renderFlows);
+document.getElementById('refresh-interfaces').addEventListener('click', refreshInterfaces);
 
-// Initialize
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     initCharts();
+
+    // If no interfaces, try to refresh
+    const select = document.getElementById('interface-select');
+    if (select.options.length <= 1) {
+        refreshInterfaces();
+    }
 });
 </script>
 {% endblock %}

@@ -98,9 +98,10 @@ a:hover {
 
 .header-controls {
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
     margin-top: 1rem;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 /* ===== Cards ===== */
@@ -180,6 +181,15 @@ a:hover {
     background: var(--accent-hover);
 }
 
+.btn-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #475569;
+}
+
 .btn-danger {
     background: var(--danger);
     color: white;
@@ -202,6 +212,10 @@ a:hover {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     color: var(--text-primary);
+}
+
+.select-input {
+    min-width: 200px;
 }
 
 .number-input {
@@ -272,12 +286,13 @@ a:hover {
     50% { color: var(--danger); transform: scale(1.2); }
 }
 
-/* ===== Metrics Cards ===== */
-.metrics-cards {
+/* ===== Metrics Row - Fixed Height ===== */
+.metrics-row {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr 200px 1fr;
     gap: 1rem;
     margin-bottom: 1.5rem;
+    height: 180px;
 }
 
 .metric-card {
@@ -285,19 +300,45 @@ a:hover {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .metric-card h3 {
     font-size: 0.875rem;
     color: var(--text-secondary);
     margin-bottom: 0.5rem;
+    flex-shrink: 0;
+}
+
+.metric-card.chart-card {
+    min-height: 0;
+}
+
+.chart-container {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+}
+
+.chart-container canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.metric-card.value-card {
+    justify-content: center;
+    align-items: center;
 }
 
 .metric-value {
-    font-size: 2rem;
+    font-size: 3rem;
     font-weight: 600;
     text-align: center;
-    padding: 1rem;
 }
 
 /* ===== Data Table ===== */
@@ -333,6 +374,8 @@ a:hover {
 
 .flows-table-wrapper {
     overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 .data-table {
@@ -353,6 +396,9 @@ a:hover {
     font-weight: 500;
     text-transform: uppercase;
     font-size: 0.75rem;
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
 }
 
 .data-table tbody tr:hover {
@@ -458,7 +504,8 @@ code {
     width: 48px;
     height: 48px;
     color: var(--text-muted);
-    margin-bottom: 1rem;
+    margin: 0 auto 1rem;
+    display: block;
 }
 
 .file-drop-zone .link {
@@ -544,6 +591,10 @@ code {
 .results-section {
     max-width: 800px;
     margin: 0 auto;
+}
+
+.results-section h2 {
+    margin-bottom: 1.5rem;
 }
 
 .summary-cards {
@@ -650,6 +701,22 @@ code {
 }
 
 /* ===== Responsive ===== */
+@media (max-width: 1024px) {
+    .metrics-row {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+
+    .metric-card {
+        height: 150px;
+    }
+
+    .metric-card.value-card {
+        height: auto;
+        padding: 1.5rem;
+    }
+}
+
 @media (max-width: 768px) {
     .navbar {
         flex-direction: column;
@@ -668,10 +735,6 @@ code {
     .status-stats {
         flex-wrap: wrap;
         justify-content: center;
-    }
-
-    .metrics-cards {
-        grid-template-columns: 1fr;
     }
 
     .summary-cards,
