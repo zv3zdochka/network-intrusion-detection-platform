@@ -19,23 +19,25 @@ _realtime_state = {
     'flows': [],
     'stats': {},
     'events_queue': queue.Queue(maxsize=1000),
-    'lock': threading.Lock()
+    'lock': threading.Lock(),
+    'project_root': None
 }
 
 
-def get_pipeline():
-    """Get or create the realtime pipeline"""
-    from realtime import RealtimePipeline
-    return _realtime_state.get('pipeline')
-
-
-@realtime_bp.route('/')
-def realtime_page():
-    """Real-time analysis page"""
-    # Get available interfaces
+def get_interfaces():
+    """Get list of network interfaces"""
     try:
+        import sys
+        from pathlib import Path
+
+        # Add project root to path if needed
+        project_root = Path(__file__).parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
         from realtime.capture import PacketCapture
         interfaces = PacketCapture.list_interfaces()
+
         # Filter to main interfaces
         main_interfaces = []
         for iface in interfaces:
@@ -45,15 +47,37 @@ def realtime_page():
                         if not ip.startswith('169.254')
                         and not ip.startswith('fe80')
                         and ip not in ('127.0.0.1', '::1')]
-            if real_ips and not any(x in name for x in ['Npcap', 'WFP', 'Filter', 'Loopback']):
+
+            # Filter out virtual interfaces
+            skip_keywords = ['Npcap', 'WFP', 'Filter', 'Loopback', 'Pseudo',
+                             'Tunneling', 'isatap', 'Teredo', '6to4']
+            should_skip = any(kw.lower() in name.lower() for kw in skip_keywords)
+
+            if real_ips and not should_skip:
                 main_interfaces.append({
                     'name': name,
+                    'description': iface.get('description', ''),
                     'ips': real_ips[:2]
                 })
-    except Exception as e:
-        main_interfaces = []
 
-    return render_template('realtime.html', interfaces=main_interfaces)
+        return main_interfaces
+    except Exception as e:
+        print(f"Error getting interfaces: {e}")
+        return []
+
+
+@realtime_bp.route('/')
+def realtime_page():
+    """Real-time analysis page"""
+    interfaces = get_interfaces()
+    return render_template('realtime.html', interfaces=interfaces)
+
+
+@realtime_bp.route('/interfaces')
+def list_interfaces():
+    """API endpoint to get interfaces"""
+    interfaces = get_interfaces()
+    return jsonify(interfaces)
 
 
 @realtime_bp.route('/start', methods=['POST'])
@@ -71,13 +95,28 @@ def start_capture():
     if not interface:
         return jsonify({'status': 'error', 'message': 'No interface specified'})
 
+    # Store project root before starting
+    project_root = current_app.config['PROJECT_ROOT']
+    _realtime_state['project_root'] = project_root
+
     try:
+        import sys
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
         from realtime import RealtimePipeline
 
-        project_root = current_app.config['PROJECT_ROOT']
         model_path = project_root / 'training_artifacts' / 'best_model_XGB_regularized.joblib'
         preprocessor_path = project_root / 'artifacts' / 'preprocessor.joblib'
         schema_path = project_root / 'artifacts' / 'feature_schema.json'
+
+        # Verify files exist
+        if not model_path.exists():
+            return jsonify({'status': 'error', 'message': f'Model not found: {model_path}'})
+        if not preprocessor_path.exists():
+            return jsonify({'status': 'error', 'message': f'Preprocessor not found: {preprocessor_path}'})
+        if not schema_path.exists():
+            return jsonify({'status': 'error', 'message': f'Schema not found: {schema_path}'})
 
         # Clear previous state
         with _realtime_state['lock']:
@@ -150,10 +189,10 @@ def start_capture():
         )
 
         pipeline.start()
-        time.sleep(1)
+        time.sleep(1.5)
 
         if not pipeline.is_running():
-            return jsonify({'status': 'error', 'message': 'Failed to start capture'})
+            return jsonify({'status': 'error', 'message': 'Failed to start capture. Make sure you have admin rights.'})
 
         _realtime_state['pipeline'] = pipeline
         _realtime_state['running'] = True
@@ -198,9 +237,9 @@ def get_stats():
                 'packets': summary.get('total_packets', 0),
                 'flows': summary.get('total_flows_analyzed', 0),
                 'attacks': summary.get('total_attacks', 0),
-                'packets_per_sec': summary.get('packets_per_second', 0),
+                'packets_per_sec': round(summary.get('packets_per_second', 0), 1),
                 'active_flows': summary.get('active_flows', 0),
-                'attack_rate': summary.get('recent_attack_rate', 0) * 100
+                'attack_rate': round(summary.get('recent_attack_rate', 0) * 100, 2)
             })
         except:
             pass
@@ -224,7 +263,7 @@ def get_flows():
     with _realtime_state['lock']:
         flows = list(_realtime_state['flows'])
 
-    return jsonify(flows[-50:])  # Last 50 flows
+    return jsonify(flows[-50:])
 
 
 @realtime_bp.route('/events')
@@ -232,41 +271,56 @@ def events():
     """Server-Sent Events stream for real-time updates"""
 
     def generate():
+        last_stats_time = 0
+
         while True:
             try:
-                # Get stats every second
-                if _realtime_state['running'] and _realtime_state['pipeline']:
-                    try:
-                        summary = _realtime_state['pipeline'].get_summary()
-                        stats_data = {
-                            'type': 'stats',
-                            'data': {
-                                'running': True,
-                                'packets': summary.get('total_packets', 0),
-                                'flows': summary.get('total_flows_analyzed', 0),
-                                'attacks': summary.get('total_attacks', 0),
-                                'packets_per_sec': round(summary.get('packets_per_second', 0), 1),
-                                'active_flows': summary.get('active_flows', 0),
-                                'attack_rate': round(summary.get('recent_attack_rate', 0) * 100, 2)
-                            }
-                        }
-                        yield f"data: {json.dumps(stats_data)}\n\n"
-                    except:
-                        pass
+                current_time = time.time()
 
-                # Check for flow events
+                # Send stats every second
+                if current_time - last_stats_time >= 1:
+                    if _realtime_state['running'] and _realtime_state['pipeline']:
+                        try:
+                            summary = _realtime_state['pipeline'].get_summary()
+                            stats_data = {
+                                'type': 'stats',
+                                'data': {
+                                    'running': True,
+                                    'packets': summary.get('total_packets', 0),
+                                    'flows': summary.get('total_flows_analyzed', 0),
+                                    'attacks': summary.get('total_attacks', 0),
+                                    'packets_per_sec': round(summary.get('packets_per_second', 0), 1),
+                                    'active_flows': summary.get('active_flows', 0),
+                                    'attack_rate': round(summary.get('recent_attack_rate', 0) * 100, 2)
+                                }
+                            }
+                            yield f"data: {json.dumps(stats_data)}\n\n"
+                        except Exception as e:
+                            pass
+                    else:
+                        # Send offline status
+                        yield f"data: {json.dumps({'type': 'stats', 'data': {'running': False}})}\n\n"
+
+                    last_stats_time = current_time
+
+                # Check for flow events (non-blocking)
                 try:
-                    event = _realtime_state['events_queue'].get(timeout=1)
+                    event = _realtime_state['events_queue'].get(timeout=0.5)
                     yield f"data: {json.dumps(event)}\n\n"
                 except queue.Empty:
-                    # Send heartbeat
-                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                    pass
 
             except GeneratorExit:
                 break
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
                 time.sleep(1)
 
-    return Response(generate(), mimetype='text/event-stream',
-                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
+        }
+    )
