@@ -19,7 +19,7 @@ sys.path.insert(0, '.')
 from realtime import RealtimePipeline
 from realtime.capture import PacketCapture
 from realtime.config import PipelineConfig
-from realtime.utils import setup_logging, save_results_json
+from realtime.utils import setup_logging, save_results_json, protocol_name
 
 # Глобальная переменная для pipeline
 pipeline = None
@@ -27,7 +27,8 @@ pipeline = None
 
 def signal_handler(sig, frame):
     """Обработчик сигналов для graceful shutdown"""
-    print("\n\nReceived shutdown signal...")
+    print("\n\n" + "=" * 60)
+    print("Received shutdown signal, stopping...")
     global pipeline
     if pipeline:
         pipeline.stop()
@@ -36,79 +37,38 @@ def signal_handler(sig, frame):
 
 def print_attack_alert(result):
     """Выводит алерт об атаке"""
-    print(f"\n{'=' * 60}")
-    print(f"🚨 ATTACK DETECTED at {result.timestamp}")
-    print(f"   Source: {result.src_ip}:{result.src_port}")
-    print(f"   Target: {result.dst_ip}:{result.dst_port}")
-    print(f"   Type: {result.class_name}")
-    print(f"   Confidence: {result.confidence:.2%}")
-    print(f"   Duration: {result.duration:.2f}s")
-    print(f"   Packets: {result.total_packets}")
-    print(f"{'=' * 60}\n")
+    print()
+    print("!" * 60)
+    print("!!! ATTACK DETECTED !!!")
+    print("!" * 60)
+    print(f"  Time: {result.timestamp}")
+    print(f"  Source: {result.src_ip}:{result.src_port}")
+    print(f"  Target: {result.dst_ip}:{result.dst_port}")
+    print(f"  Protocol: {protocol_name(result.protocol)}")
+    print(f"  Attack Type: {result.class_name}")
+    print(f"  Confidence: {result.confidence:.2%}")
+    print(f"  Duration: {result.duration:.3f}s")
+    print(f"  Packets: {result.total_packets}")
+    print(f"  Bytes: {result.total_bytes}")
+    print("!" * 60)
+    print()
 
 
 def print_flow_result(result):
     """Выводит результат анализа потока"""
-    status = "⚠️ ATTACK" if result.is_attack else "✅ BENIGN"
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {status} | "
-          f"{result.src_ip}:{result.src_port} -> {result.dst_ip}:{result.dst_port} | "
-          f"{result.class_name} ({result.confidence:.1%}) | "
-          f"{result.total_packets} pkts")
+    if result.is_attack:
+        status = "[ATTACK]"
+    else:
+        status = "[BENIGN]"
 
+    proto = protocol_name(result.protocol)
 
-def select_interface_interactive() -> str:
-    """Интерактивный выбор интерфейса"""
-    interfaces = PacketCapture.list_interfaces()
-
-    if not interfaces:
-        print("ERROR: No network interfaces found!")
-        if IS_WINDOWS:
-            print("\nMake sure Npcap is installed: https://npcap.com/#download")
-            print("Install it with 'WinPcap API-compatible Mode' enabled!")
-        sys.exit(1)
-
-    print("\nAvailable network interfaces:")
-    print("-" * 60)
-
-    for i, iface in enumerate(interfaces):
-        name = iface.get('name', 'unknown')
-        desc = iface.get('description', '')
-        ips = iface.get('ips', [])
-
-        # Фильтруем автоматические IP
-        real_ips = [ip for ip in ips if not ip.startswith('169.254') and not ip.startswith('fe80')]
-
-        print(f"  [{i}] {name}")
-        if desc:
-            print(f"      {desc}")
-        if real_ips:
-            print(f"      IPs: {', '.join(real_ips[:2])}")
-        print()
-
-    # Автовыбор если один интерфейс с реальным IP
-    default_idx = 0
-    for i, iface in enumerate(interfaces):
-        ips = iface.get('ips', [])
-        real_ips = [ip for ip in ips if not ip.startswith('169.254') and not ip.startswith('fe80')]
-        if real_ips:
-            default_idx = i
-            break
-
-    try:
-        choice = input(f"Select interface number [{default_idx}]: ").strip()
-        if choice == '':
-            idx = default_idx
-        else:
-            idx = int(choice)
-
-        if 0 <= idx < len(interfaces):
-            return interfaces[idx]['name']
-        else:
-            print(f"Invalid choice, using default: {interfaces[default_idx]['name']}")
-            return interfaces[default_idx]['name']
-    except (ValueError, KeyboardInterrupt):
-        print(f"\nUsing default: {interfaces[default_idx]['name']}")
-        return interfaces[default_idx]['name']
+    print(f"{datetime.now().strftime('%H:%M:%S')} {status:9} "
+          f"{result.src_ip:>15}:{result.src_port:<5} -> "
+          f"{result.dst_ip:>15}:{result.dst_port:<5} "
+          f"{proto:4} | {result.class_name:12} "
+          f"({result.confidence:5.1%}) | "
+          f"{result.total_packets:4} pkts, {result.total_bytes:6} bytes")
 
 
 def check_admin():
@@ -127,44 +87,29 @@ def check_admin():
 def main():
     global pipeline
 
-    print("=" * 60)
-    print("Real-time Network Traffic Analyzer")
-    print(f"Platform: {platform.system()} {platform.release()}")
-    print("=" * 60)
+    print()
+    print("=" * 70)
+    print("       REAL-TIME NETWORK TRAFFIC ANALYZER")
+    print(f"       Platform: {platform.system()} {platform.release()}")
+    print("=" * 70)
 
     # Проверка прав
-    if not check_admin():
-        print("\n⚠️  WARNING: Not running as Administrator!")
+    is_admin = check_admin()
+    if is_admin:
+        print("[OK] Running as Administrator")
+    else:
+        print("[!!] WARNING: Not running as Administrator!")
         if IS_WINDOWS:
-            print("   Packet capture may not work.")
-            print("   Right-click and 'Run as administrator'")
+            print("     Packet capture may not work.")
+            print("     Right-click PowerShell and 'Run as administrator'")
         else:
-            print("   Run with: sudo python run_realtime.py")
+            print("     Run with: sudo python run_realtime.py")
         print()
+        input("Press Enter to continue anyway, or Ctrl+C to exit...")
 
     parser = argparse.ArgumentParser(
         description='Real-time Network Traffic Analyzer',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Interactive mode (will ask for interface)
-  python run_realtime.py
-
-  # Specify interface
-  python run_realtime.py -i "Ethernet"
-
-  # With model
-  python run_realtime.py -i "Wi-Fi" -m ./models/model.pt
-
-  # With config file  
-  python run_realtime.py -c config.json
-
-  # Filter specific traffic
-  python run_realtime.py -i "Ethernet" -f "tcp port 80 or tcp port 443"
-
-  # List interfaces only
-  python run_realtime.py --list-interfaces
-        """
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     parser.add_argument('-i', '--interface', type=str, default=None,
@@ -211,11 +156,51 @@ Examples:
     else:
         config = PipelineConfig()
 
-    # Выбор интерфейса
+    # Интерфейс
     if args.interface:
         config.capture.interface = args.interface
-    elif config.capture.interface is None:
-        config.capture.interface = select_interface_interactive()
+
+    if not config.capture.interface:
+        # Показываем основные интерфейсы для выбора
+        print("\nSelect network interface:")
+        print("-" * 50)
+
+        interfaces = PacketCapture.list_interfaces()
+        # Фильтруем только реальные интерфейсы
+        main_interfaces = []
+        for iface in interfaces:
+            name = iface.get('name', '')
+            ips = iface.get('ips', [])
+            # Только интерфейсы с реальными IP
+            real_ips = [ip for ip in ips
+                        if not ip.startswith('169.254')
+                        and not ip.startswith('fe80')
+                        and ip != '127.0.0.1'
+                        and ip != '::1']
+            if real_ips and 'Npcap' not in name and 'WFP' not in name:
+                main_interfaces.append(iface)
+
+        for i, iface in enumerate(main_interfaces):
+            name = iface.get('name', 'unknown')
+            desc = iface.get('description', '')[:40]
+            ips = [ip for ip in iface.get('ips', [])
+                   if not ip.startswith('169.254') and not ip.startswith('fe80')]
+            ip_str = ', '.join(ips[:2]) if ips else 'No IP'
+            print(f"  [{i}] {name}")
+            print(f"      {desc}")
+            print(f"      IP: {ip_str}")
+            print()
+
+        if not main_interfaces:
+            print("No suitable interfaces found!")
+            return
+
+        try:
+            choice = input(f"Enter number [0]: ").strip()
+            idx = int(choice) if choice else 0
+            config.capture.interface = main_interfaces[idx]['name']
+        except (ValueError, IndexError, KeyboardInterrupt):
+            config.capture.interface = main_interfaces[0]['name']
 
     # Переопределяем из CLI
     if args.filter:
@@ -226,10 +211,7 @@ Examples:
         config.analyzer.scaler_path = args.scaler
 
     # Настройка логирования
-    logger = setup_logging(
-        log_file=config.logging.file,
-        level=getattr(__import__('logging'), config.logging.level)
-    )
+    logger = setup_logging(level=20)  # INFO
 
     # Callbacks
     callbacks = {}
@@ -237,10 +219,18 @@ Examples:
     if not args.quiet:
         callbacks['on_attack_detected'] = print_attack_alert
 
-    if args.verbose and not args.quiet:
+    if args.verbose:
         callbacks['on_flow_analyzed'] = print_flow_result
 
     # Создаём pipeline
+    print()
+    print("-" * 70)
+    print(f"Interface: {config.capture.interface}")
+    print(f"Filter: {config.capture.bpf_filter}")
+    print(f"Model: {config.analyzer.model_path or 'DUMMY (testing mode)'}")
+    print(f"Duration: {'infinite' if args.duration == 0 else f'{args.duration}s'}")
+    print("-" * 70)
+
     pipeline = RealtimePipeline(
         interface=config.capture.interface,
         model_path=config.analyzer.model_path,
@@ -255,84 +245,126 @@ Examples:
     if not config.analyzer.model_path:
         from realtime.analyzer import create_dummy_analyzer
         pipeline.analyzer = create_dummy_analyzer()
-        print("\n⚠️  No model provided, using dummy analyzer for testing")
+        print()
+        print("[!!] No model provided - using DUMMY analyzer for testing")
+        print("     Results are RANDOM and not real predictions!")
+        print()
 
     # Обработчик сигналов
     signal.signal(signal.SIGINT, signal_handler)
     if not IS_WINDOWS:
         signal.signal(signal.SIGTERM, signal_handler)
 
-    # Запуск
-    print(f"\n{'=' * 60}")
-    print("Configuration:")
-    print(f"  Interface: {config.capture.interface}")
-    print(f"  Filter: {config.capture.bpf_filter}")
-    print(f"  Model: {config.analyzer.model_path or 'dummy (testing)'}")
-    print(f"  Duration: {'infinite' if args.duration == 0 else f'{args.duration}s'}")
-    print(f"{'=' * 60}")
-    print("\nStarting capture... (Press Ctrl+C to stop)\n")
+    print()
+    print("Starting packet capture...")
+    print("Press Ctrl+C to stop")
+    print()
+
+    if args.verbose:
+        print("TIME     STATUS    SOURCE                  DESTINATION             PROTO  CLASS        CONF    PACKETS")
+        print("-" * 120)
 
     pipeline.start()
 
     # Ждём запуска
-    time.sleep(1)
+    time.sleep(1.5)
 
     if not pipeline.is_running():
-        print("\n❌ Failed to start pipeline!")
-        print("   Check that Npcap is installed and you have admin rights.")
+        print()
+        print("[ERROR] Failed to start pipeline!")
+        print("        Possible causes:")
+        print("        1. Not running as Administrator")
+        print("        2. Npcap not installed properly")
+        print("        3. Interface name is incorrect")
+        print()
+        print("        Try: python run_realtime.py --list-interfaces")
         return
+
+    print("[OK] Capture started successfully!")
+    print()
 
     try:
         elapsed = 0
-        last_stats_time = 0
+        last_stats = None
 
         while args.duration == 0 or elapsed < args.duration:
             time.sleep(1)
             elapsed += 1
 
-            # Показываем статистику каждые 5 секунд
-            if elapsed - last_stats_time >= 5 and not args.quiet:
+            # Показываем статистику каждые 3 секунды
+            if elapsed % 3 == 0 and not args.verbose:
                 summary = pipeline.get_summary()
+
+                # Очищаем предыдущую строку и выводим новую
                 stats_line = (
-                    f"\r[{elapsed:4d}s] "
-                    f"Packets: {summary['total_packets']:,} | "
-                    f"Flows: {summary['total_flows_analyzed']:,} | "
-                    f"Attacks: {summary['total_attacks']:,} | "
-                    f"Rate: {summary['packets_per_second']:.1f} pps   "
+                    f"[{elapsed:5d}s] "
+                    f"Packets: {summary['total_packets']:>8,} | "
+                    f"Flows: {summary['total_flows_analyzed']:>6,} | "
+                    f"Attacks: {summary['total_attacks']:>4} | "
+                    f"Active: {summary['active_flows']:>4} | "
+                    f"Rate: {summary['packets_per_second']:>7.1f} pps"
                 )
-                print(stats_line, end='', flush=True)
-                last_stats_time = elapsed
+                print(f"\r{stats_line}", end='', flush=True)
+                last_stats = summary
 
     except KeyboardInterrupt:
-        print("\n\n⏹️  Interrupted by user")
+        print("\n")
+        print("=" * 70)
+        print("Stopping capture...")
 
     finally:
         pipeline.stop()
+
+        # Финальная статистика
+        print()
+        print("=" * 70)
+        print("                    FINAL STATISTICS")
+        print("=" * 70)
+
+        stats = pipeline.get_stats()
+
+        runtime = stats['capture'].get('uptime_seconds', 0)
+        print(f"  Runtime: {runtime:.1f} seconds")
+        print()
+        print(f"  Packets captured:    {stats['capture'].get('total_packets', 0):>12,}")
+        print(f"  Packets processed:   {stats['pipeline']['packets_processed']:>12,}")
+        print(f"  Packets dropped:     {stats['capture'].get('dropped_packets', 0):>12,}")
+        print(f"  Parse errors:        {stats['capture'].get('parse_errors', 0):>12,}")
+        print()
+        print(f"  Flows analyzed:      {stats['pipeline']['flows_analyzed']:>12,}")
+        print(f"  Active flows:        {stats['aggregator'].get('active_flows', 0):>12,}")
+        print()
+        print(f"  ATTACKS DETECTED:    {stats['pipeline']['attacks_detected']:>12}")
+
+        if runtime > 0:
+            pps = stats['capture'].get('total_packets', 0) / runtime
+            print()
+            print(f"  Average rate: {pps:.1f} packets/second")
+
+        # Показываем последние атаки
+        attacks = pipeline.get_recent_attacks(5)
+        if attacks:
+            print()
+            print("-" * 70)
+            print("Last detected attacks:")
+            print("-" * 70)
+            for attack in attacks:
+                print(f"  {attack.timestamp[:19]} | "
+                      f"{attack.src_ip}:{attack.src_port} -> "
+                      f"{attack.dst_ip}:{attack.dst_port} | "
+                      f"{attack.class_name} ({attack.confidence:.0%})")
 
         # Сохраняем результаты
         if args.output:
             results = pipeline.get_recent_results()
             save_results_json(results, args.output)
-            print(f"\n💾 Results saved to {args.output}")
+            print()
+            print(f"Results saved to: {args.output}")
 
-        # Финальная статистика
-        print("\n" + "=" * 60)
-        print("📊 Final Statistics")
-        print("=" * 60)
-        stats = pipeline.get_stats()
-        print(f"  Total packets processed: {stats['pipeline']['packets_processed']:,}")
-        print(f"  Total flows analyzed: {stats['pipeline']['flows_analyzed']:,}")
-        print(f"  Total attacks detected: {stats['pipeline']['attacks_detected']:,}")
-
-        if stats['capture'].get('parse_errors', 0) > 0:
-            print(f"  Capture errors: {stats['capture']['parse_errors']}")
-
-        attacks = pipeline.get_recent_attacks(10)
-        if attacks:
-            print("\n🚨 Last detected attacks:")
-            for attack in attacks:
-                print(f"  • {attack.src_ip} -> {attack.dst_ip}: {attack.class_name} "
-                      f"({attack.confidence:.0%})")
+        print()
+        print("=" * 70)
+        print("Done!")
+        print("=" * 70)
 
 
 if __name__ == "__main__":

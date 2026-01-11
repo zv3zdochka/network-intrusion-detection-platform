@@ -1,82 +1,68 @@
 """
-Анализатор трафика с использованием нейронной сети
-Загружает модель и выполняет предсказания
+Анализатор трафика в реальном времени
+Использует Predictor и InferencePipeline из src/inference
 """
 
-import os
-import json
-import numpy as np
-from typing import Dict, Any, List, Optional, Tuple
+import sys
+from pathlib import Path
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from collections import deque
 import threading
+import numpy as np
 
-# Попытка импорта PyTorch
+# Добавляем корень проекта в путь
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# Импортируем ваш Predictor
 try:
-    import torch
-    import torch.nn as nn
-
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    print("Warning: PyTorch not installed")
-
-# Попытка импорта sklearn для препроцессинга
-try:
-    import joblib
-    from sklearn.preprocessing import StandardScaler
-
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    SKLEARN_AVAILABLE = False
-    print("Warning: sklearn not installed")
+    from src.inference import Predictor, InferencePipeline
+    PREDICTOR_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not import Predictor: {e}")
+    PREDICTOR_AVAILABLE = False
 
 
 class TrafficAnalyzer:
     """
-    Анализирует сетевой трафик с использованием обученной нейронной сети
+    Анализирует сетевой трафик с использованием Predictor из src/inference
     """
 
     def __init__(
-            self,
-            model_path: Optional[str] = None,
-            scaler_path: Optional[str] = None,
-            config_path: Optional[str] = None,
-            threshold: float = 0.5,
-            device: str = 'auto',
-            history_size: int = 1000
+        self,
+        model_path: Optional[str] = None,
+        preprocessor_path: Optional[str] = None,
+        feature_schema_path: Optional[str] = None,
+        threshold: float = 0.5,
+        history_size: int = 1000
     ):
         """
         Args:
-            model_path: Путь к файлу модели (.pt или .pth)
-            scaler_path: Путь к скейлеру (pickle/joblib)
-            config_path: Путь к конфигурации модели (JSON)
-            threshold: Порог для классификации
-            device: 'cpu', 'cuda' или 'auto'
+            model_path: Путь к модели (.pkl или .joblib)
+            preprocessor_path: Путь к препроцессору (.pkl)
+            feature_schema_path: Путь к схеме признаков (.json)
+            threshold: Порог для классификации атаки
             history_size: Размер истории предсказаний
         """
         self.model_path = model_path
-        self.scaler_path = scaler_path
-        self.config_path = config_path
+        self.preprocessor_path = preprocessor_path
+        self.feature_schema_path = feature_schema_path
         self.threshold = threshold
-        self.history_size = history_size
 
-        # Определяем устройство
-        if device == 'auto':
-            self.device = 'cuda' if (TORCH_AVAILABLE and torch.cuda.is_available()) else 'cpu'
-        else:
-            self.device = device
+        # Predictor и Pipeline
+        self.predictor: Optional[Predictor] = None
+        self.pipeline: Optional[InferencePipeline] = None
 
-        self.model = None
-        self.scaler = None
-        self.config = {}
-        self.class_names = ['BENIGN', 'ATTACK']
+        # Метаданные
+        self.feature_cols: List[str] = []
+        self.n_features: int = 78
 
-        # История предсказаний для статистики
+        # История и статистика
         self._prediction_history = deque(maxlen=history_size)
         self._lock = threading.Lock()
+        self._flow_counter = 0
 
-        # Статистика
         self._stats = {
             'total_predictions': 0,
             'benign_count': 0,
@@ -84,308 +70,406 @@ class TrafficAnalyzer:
             'errors': 0
         }
 
-        # Загружаем модель если путь указан
+        # Загружаем модель
         if model_path:
-            self.load_model(model_path, scaler_path, config_path)
+            self.load_model(model_path, preprocessor_path, feature_schema_path)
 
     def load_model(
-            self,
-            model_path: str,
-            scaler_path: Optional[str] = None,
-            config_path: Optional[str] = None
+        self,
+        model_path: str,
+        preprocessor_path: Optional[str] = None,
+        feature_schema_path: Optional[str] = None
     ):
-        """
-        Загружает модель и связанные файлы
+        """Загружает модель используя Predictor из src/inference"""
 
-        Args:
-            model_path: Путь к модели
-            scaler_path: Путь к скейлеру
-            config_path: Путь к конфигурации
-        """
-        if not TORCH_AVAILABLE:
-            raise RuntimeError("PyTorch is required to load the model")
+        if not PREDICTOR_AVAILABLE:
+            raise RuntimeError(
+                "Predictor not available. Make sure src/inference is accessible."
+            )
 
-        # Загружаем конфигурацию
-        if config_path and os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                self.config = json.load(f)
-            self.class_names = self.config.get('class_names', self.class_names)
+        print(f"[Analyzer] Loading model...")
 
-        # Загружаем скейлер
-        if scaler_path and os.path.exists(scaler_path):
-            if SKLEARN_AVAILABLE:
-                self.scaler = joblib.load(scaler_path)
-            else:
-                print("Warning: sklearn not available, skipping scaler")
+        model_path = Path(model_path)
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model not found: {model_path}")
 
-        # Загружаем модель
-        if os.path.exists(model_path):
-            checkpoint = torch.load(model_path, map_location=self.device)
+        model_dir = model_path.parent
 
-            # Проверяем формат checkpoint
-            if isinstance(checkpoint, dict):
-                if 'model_state_dict' in checkpoint:
-                    # Нужно создать модель и загрузить веса
-                    self._create_model_from_config(checkpoint)
-                elif 'state_dict' in checkpoint:
-                    self._create_model_from_config(checkpoint)
-                else:
-                    # Возможно это уже модель целиком
-                    self.model = checkpoint
-            else:
-                self.model = checkpoint
+        # Автоопределение путей если не указаны
+        if preprocessor_path is None:
+            possible = [
+                model_dir / 'preprocessor.pkl',
+                model_dir / 'preprocessor.joblib',
+                model_dir / 'scaler.pkl',
+            ]
+            for p in possible:
+                if p.exists():
+                    preprocessor_path = str(p)
+                    break
 
-            if self.model:
-                self.model.to(self.device)
-                self.model.eval()
+        if feature_schema_path is None:
+            possible = [
+                model_dir / 'feature_schema.json',
+                model_dir / 'features.json',
+                model_dir / 'schema.json',
+            ]
+            for p in possible:
+                if p.exists():
+                    feature_schema_path = str(p)
+                    break
 
-            print(f"Model loaded from {model_path} on {self.device}")
-        else:
-            raise FileNotFoundError(f"Model file not found: {model_path}")
+        print(f"  Model: {model_path}")
+        print(f"  Preprocessor: {preprocessor_path or 'Not found'}")
+        print(f"  Feature Schema: {feature_schema_path or 'Not found'}")
 
-    def _create_model_from_config(self, checkpoint: dict):
-        """Создаёт модель на основе конфигурации в checkpoint"""
-        # Простая MLP модель как fallback
-        # В реальном проекте здесь нужно использовать ту же архитектуру что при обучении
+        if not preprocessor_path or not feature_schema_path:
+            raise FileNotFoundError(
+                "preprocessor_path and feature_schema_path are required.\n"
+                f"Looking in: {model_dir}"
+            )
 
-        if 'model_config' in checkpoint:
-            config = checkpoint['model_config']
-            input_size = config.get('input_size', 78)
-            hidden_sizes = config.get('hidden_sizes', [128, 64])
-            num_classes = config.get('num_classes', 2)
-        else:
-            # Пытаемся определить по state_dict
-            state_dict = checkpoint.get('model_state_dict', checkpoint.get('state_dict', {}))
-            if state_dict:
-                # Определяем размер входа по первому слою
-                first_layer = list(state_dict.keys())[0]
-                if 'weight' in first_layer:
-                    input_size = state_dict[first_layer].shape[1]
-                else:
-                    input_size = 78
-            else:
-                input_size = 78
-            hidden_sizes = [128, 64]
-            num_classes = 2
+        try:
+            # Создаём Predictor
+            self.predictor = Predictor(
+                model_path=str(model_path),
+                preprocessor_path=preprocessor_path,
+                feature_schema_path=feature_schema_path,
+                threshold=self.threshold
+            )
+            self.predictor.load()
 
-        # Создаём простую модель
-        layers = []
-        prev_size = input_size
-        for hidden_size in hidden_sizes:
-            layers.append(nn.Linear(prev_size, hidden_size))
-            layers.append(nn.ReLU())
-            layers.append(nn.Dropout(0.3))
-            prev_size = hidden_size
-        layers.append(nn.Linear(prev_size, num_classes))
+            # Создаём Pipeline
+            self.pipeline = InferencePipeline(
+                predictor=self.predictor,
+                alert_threshold=self.threshold
+            )
 
-        self.model = nn.Sequential(*layers)
+            # Сохраняем метаданные
+            self.feature_cols = self.predictor.feature_cols or []
+            self.n_features = len(self.feature_cols) if self.feature_cols else 78
 
-        # Загружаем веса
-        state_dict = checkpoint.get('model_state_dict', checkpoint.get('state_dict', {}))
-        if state_dict:
-            try:
-                self.model.load_state_dict(state_dict)
-            except Exception as e:
-                print(f"Warning: Could not load state dict: {e}")
+            print(f"  Features: {self.n_features}")
+            print(f"  Model type: {type(self.predictor.model).__name__}")
+            print(f"[Analyzer] Model loaded successfully!")
 
-    def preprocess(self, features: np.ndarray) -> np.ndarray:
-        """
-        Препроцессинг признаков перед подачей в модель
+        except Exception as e:
+            import traceback
+            print(f"[Analyzer] Error loading model: {e}")
+            traceback.print_exc()
+            raise
 
-        Args:
-            features: Массив признаков [n_samples, n_features] или [n_features]
+    def preprocess_features(self, features: np.ndarray) -> np.ndarray:
+        """Препроцессинг признаков через ваш preprocessor"""
 
-        Returns:
-            Преобразованные признаки
-        """
-        # Обеспечиваем 2D форму
+        # Обеспечиваем 2D
         if features.ndim == 1:
             features = features.reshape(1, -1)
 
-        # Заменяем inf и nan
+        # Очистка данных
         features = np.nan_to_num(features, nan=0.0, posinf=1e10, neginf=-1e10)
+        features = np.clip(features, -1e15, 1e15).astype(np.float64)
 
-        # Применяем скейлер если есть
-        if self.scaler is not None:
-            features = self.scaler.transform(features)
+        # Применяем препроцессор если загружен
+        if self.predictor and self.predictor.preprocessor:
+            try:
+                features = self.predictor.preprocessor.transform(features)
+            except Exception as e:
+                print(f"Warning: Preprocessor error: {e}")
 
-        return features.astype(np.float32)
+        return features
 
     def predict(self, features: np.ndarray) -> Dict[str, Any]:
         """
-        Выполняет предсказание для набора признаков
+        Выполняет предсказание
 
         Args:
-            features: Массив признаков
+            features: numpy array признаков [n_features] или [batch, n_features]
 
         Returns:
-            Словарь с результатами предсказания
+            Словарь с результатом предсказания
         """
-        if self.model is None:
+        if self.predictor is None or not self.predictor.is_loaded:
             return {
                 'error': 'Model not loaded',
                 'prediction': None,
-                'probabilities': None
+                'is_attack': False
             }
 
         try:
             # Препроцессинг
-            processed = self.preprocess(features)
+            if features.ndim == 1:
+                features = features.reshape(1, -1)
 
-            # Конвертируем в тензор
-            with torch.no_grad():
-                tensor = torch.FloatTensor(processed).to(self.device)
-                outputs = self.model(tensor)
+            features = np.nan_to_num(features, nan=0.0, posinf=1e10, neginf=-1e10)
+            features = np.clip(features, -1e15, 1e15).astype(np.float64)
 
-                # Применяем softmax для получения вероятностей
-                probabilities = torch.softmax(outputs, dim=1).cpu().numpy()
-                predictions = outputs.argmax(dim=1).cpu().numpy()
+            batch_size = features.shape[0]
 
-            # Обновляем статистику
+            # Индексы потоков
             with self._lock:
-                self._stats['total_predictions'] += len(predictions)
-                for pred in predictions:
-                    if pred == 0:
-                        self._stats['benign_count'] += 1
-                    else:
-                        self._stats['attack_count'] += 1
+                flow_indices = list(range(self._flow_counter, self._flow_counter + batch_size))
+                self._flow_counter += batch_size
 
-            # Формируем результат
+            # Предсказание через pipeline
+            alerts = self.pipeline.process_batch(
+                features=features,
+                flow_indices=flow_indices,
+                true_labels=None,
+                store_alerts=True
+            )
+
+            # Получаем вероятности напрямую для всех потоков
+            predictions, probabilities, _ = self.predictor.predict_batch(
+                features=features,
+                flow_indices=flow_indices
+            )
+
+            # Формируем результаты
             results = []
-            for i in range(len(predictions)):
-                pred_class = int(predictions[i])
-                probs = probabilities[i].tolist()
+            alert_indices = {a.flow_index for a in alerts}
+
+            for i in range(batch_size):
+                flow_idx = flow_indices[i]
+                is_attack = flow_idx in alert_indices
+                pred = int(predictions[i])
+                prob = float(probabilities[i])
 
                 result = {
-                    'prediction': pred_class,
-                    'class_name': self.class_names[pred_class] if pred_class < len(
-                        self.class_names) else f'class_{pred_class}',
-                    'probabilities': {
-                        self.class_names[j] if j < len(self.class_names) else f'class_{j}': float(probs[j])
-                        for j in range(len(probs))
-                    },
-                    'confidence': float(max(probs)),
-                    'is_attack': pred_class != 0,
+                    'prediction': pred,
+                    'class_name': 'ATTACK' if is_attack else 'BENIGN',
+                    'confidence': prob if is_attack else (1 - prob),
+                    'probability': prob,
+                    'is_attack': is_attack,
+                    'flow_index': flow_idx,
                     'timestamp': datetime.now().isoformat()
                 }
                 results.append(result)
 
-                # Добавляем в историю
+                # Статистика
                 with self._lock:
+                    self._stats['total_predictions'] += 1
+                    if is_attack:
+                        self._stats['attack_count'] += 1
+                    else:
+                        self._stats['benign_count'] += 1
                     self._prediction_history.append(result)
 
-            if len(results) == 1:
-                return results[0]
-            return {'predictions': results}
+            return results[0] if len(results) == 1 else {'predictions': results}
 
         except Exception as e:
             self._stats['errors'] += 1
+            import traceback
             return {
                 'error': str(e),
+                'traceback': traceback.format_exc(),
                 'prediction': None,
-                'probabilities': None
+                'is_attack': False
             }
 
-    def predict_flow(self, flow_features: Dict[str, float]) -> Dict[str, Any]:
-        """
-        Предсказание для потока с признаками в виде словаря
+    def get_alerts(self, limit: int = 100) -> List[Dict]:
+        """Получает последние алерты"""
+        if self.pipeline is None:
+            return []
 
-        Args:
-            flow_features: Словарь признаков потока
-
-        Returns:
-            Результат предсказания
-        """
-        # Получаем список признаков в правильном порядке
-        from .feature_extractor import FeatureConfig
-
-        feature_values = []
-        for name in FeatureConfig.FEATURE_NAMES:
-            value = flow_features.get(name, 0.0)
-            feature_values.append(float(value))
-
-        features = np.array(feature_values, dtype=np.float32)
-        return self.predict(features)
+        alerts = self.pipeline.get_alerts(limit=limit)
+        return [a.to_dict() for a in alerts]
 
     def get_stats(self) -> Dict[str, Any]:
-        """Возвращает статистику анализатора"""
+        """Возвращает статистику"""
         with self._lock:
-            total = self._stats['total_predictions']
-            return {
-                **self._stats,
-                'benign_rate': self._stats['benign_count'] / total if total > 0 else 0,
-                'attack_rate': self._stats['attack_count'] / total if total > 0 else 0,
-                'model_loaded': self.model is not None,
-                'device': self.device,
+            total = max(self._stats['total_predictions'], 1)
+
+            stats = {
+                **self._stats.copy(),
+                'benign_rate': self._stats['benign_count'] / total,
+                'attack_rate': self._stats['attack_count'] / total,
+                'model_loaded': self.predictor is not None and self.predictor.is_loaded,
+                'n_features': self.n_features,
                 'history_size': len(self._prediction_history)
             }
 
+            # Добавляем статистику из pipeline если есть
+            if self.pipeline:
+                pipeline_stats = self.pipeline.get_stats()
+                stats['pipeline'] = pipeline_stats
+
+            return stats
+
     def get_recent_predictions(self, n: int = 100) -> List[Dict[str, Any]]:
-        """Возвращает последние n предсказаний"""
+        """Возвращает последние предсказания"""
         with self._lock:
             return list(self._prediction_history)[-n:]
 
-    def get_attack_summary(self, time_window_seconds: float = 60.0) -> Dict[str, Any]:
-        """
-        Возвращает сводку атак за последние N секунд
-
-        Args:
-            time_window_seconds: Временное окно в секундах
-
-        Returns:
-            Сводка по атакам
-        """
-        now = datetime.now()
-        attacks = []
-        benign = 0
-
+    def reset(self):
+        """Сбрасывает состояние"""
         with self._lock:
-            for pred in self._prediction_history:
-                try:
-                    pred_time = datetime.fromisoformat(pred['timestamp'])
-                    delta = (now - pred_time).total_seconds()
+            self._flow_counter = 0
+            self._prediction_history.clear()
+            self._stats = {
+                'total_predictions': 0,
+                'benign_count': 0,
+                'attack_count': 0,
+                'errors': 0
+            }
 
-                    if delta <= time_window_seconds:
-                        if pred.get('is_attack', False):
-                            attacks.append(pred)
-                        else:
-                            benign += 1
-                except:
-                    pass
+        if self.pipeline:
+            self.pipeline.reset()
 
-        return {
-            'time_window_seconds': time_window_seconds,
-            'total_flows': len(attacks) + benign,
-            'attack_count': len(attacks),
-            'benign_count': benign,
-            'attack_rate': len(attacks) / (len(attacks) + benign) if (len(attacks) + benign) > 0 else 0,
-            'attacks': attacks[-10:]  # Последние 10 атак
-        }
+    def get_model_info(self) -> Dict[str, Any]:
+        """Информация о модели"""
+        if self.predictor:
+            return self.predictor.get_model_info()
+        return {'loaded': False}
 
 
-# Заглушка модели для тестирования без реальной модели
-class DummyModel:
-    """Заглушка модели для тестирования"""
+# === Заглушка для тестирования ===
 
-    def __init__(self, num_classes: int = 2):
-        self.num_classes = num_classes
+class DummyPredictor:
+    """Заглушка для тестирования без модели"""
 
-    def __call__(self, x):
-        batch_size = x.shape[0]
-        # Возвращаем случайные логиты
-        return torch.randn(batch_size, self.num_classes)
+    def __init__(self, attack_ratio: float = 0.1):
+        self.attack_ratio = attack_ratio
+        self.is_loaded = True
+        self.feature_cols = [f'feature_{i}' for i in range(78)]
+        self.preprocessor = None
+        self.threshold = 0.5
+        self.model = None
 
-    def eval(self):
-        pass
-
-    def to(self, device):
+    def load(self):
         return self
 
+    def predict_batch(self, features, flow_indices=None, true_labels=None):
+        n = features.shape[0]
+        probabilities = np.random.random(n)
+        # Делаем атаки редкими
+        probabilities = probabilities * 0.3  # Максимум 30%
+        # Иногда делаем атаку
+        attack_mask = np.random.random(n) < self.attack_ratio
+        probabilities[attack_mask] = np.random.uniform(0.6, 0.95, attack_mask.sum())
 
-def create_dummy_analyzer() -> TrafficAnalyzer:
-    """Создаёт анализатор с заглушкой для тестирования"""
+        predictions = (probabilities >= self.threshold).astype(int)
+        inference_time = 0.1
+        return predictions, probabilities, inference_time
+
+    def predict_single(self, features, flow_index=0, true_label=None, return_features=False):
+        from dataclasses import dataclass
+
+        @dataclass
+        class Result:
+            flow_index: int
+            prediction: int
+            probability: float
+            is_attack: bool
+            inference_time_ms: float
+            true_label: Optional[int] = None
+
+        prob = np.random.random() * 0.3
+        if np.random.random() < self.attack_ratio:
+            prob = np.random.uniform(0.6, 0.95)
+
+        pred = 1 if prob >= self.threshold else 0
+
+        return Result(
+            flow_index=flow_index,
+            prediction=pred,
+            probability=prob,
+            is_attack=pred == 1,
+            inference_time_ms=0.1,
+            true_label=true_label
+        )
+
+    def get_model_info(self):
+        return {'loaded': True, 'type': 'DummyPredictor'}
+
+
+class DummyPipeline:
+    """Заглушка InferencePipeline"""
+
+    def __init__(self, predictor):
+        self.predictor = predictor
+        self._alerts = []
+        self._alert_counter = 0
+        self.stats = type('Stats', (), {
+            'total_flows': 0,
+            'total_alerts': 0,
+            'to_dict': lambda s: {'total_flows': s.total_flows, 'total_alerts': s.total_alerts}
+        })()
+
+    def process_batch(self, features, flow_indices, true_labels=None, store_alerts=True):
+        predictions, probabilities, _ = self.predictor.predict_batch(features, flow_indices)
+
+        alerts = []
+        for i, (pred, prob, flow_idx) in enumerate(zip(predictions, probabilities, flow_indices)):
+            self.stats.total_flows += 1
+
+            if pred == 1:
+                self._alert_counter += 1
+                self.stats.total_alerts += 1
+
+                alert = type('Alert', (), {
+                    'id': self._alert_counter,
+                    'flow_index': flow_idx,
+                    'prediction': pred,
+                    'probability': float(prob),
+                    'is_attack': True,
+                    'timestamp': datetime.now(),
+                    'true_label': None,
+                    'is_correct': None,
+                    'inference_time_ms': 0.1,
+                    'to_dict': lambda s: {
+                        'id': s.id,
+                        'flow_index': s.flow_index,
+                        'prediction': s.prediction,
+                        'probability': s.probability
+                    }
+                })()
+
+                alerts.append(alert)
+                if store_alerts:
+                    self._alerts.append(alert)
+
+        return alerts
+
+    def get_alerts(self, limit=100):
+        return self._alerts[-limit:]
+
+    def get_stats(self):
+        return self.stats.to_dict()
+
+    def reset(self):
+        self._alerts = []
+        self._alert_counter = 0
+        self.stats.total_flows = 0
+        self.stats.total_alerts = 0
+
+
+def create_dummy_analyzer(attack_ratio: float = 0.1) -> TrafficAnalyzer:
+    """Создаёт тестовый анализатор со случайными предсказаниями"""
     analyzer = TrafficAnalyzer()
-    if TORCH_AVAILABLE:
-        analyzer.model = DummyModel()
-        analyzer.model.eval()
-    return analyzer 
+    analyzer.predictor = DummyPredictor(attack_ratio)
+    analyzer.pipeline = DummyPipeline(analyzer.predictor)
+    analyzer.feature_cols = analyzer.predictor.feature_cols
+    analyzer.n_features = 78
+    return analyzer
+
+
+# === Тест ===
+
+if __name__ == "__main__":
+    print("Testing TrafficAnalyzer...")
+    print("=" * 50)
+
+    analyzer = create_dummy_analyzer(attack_ratio=0.15)
+
+    # Тест
+    test_features = np.random.randn(10, 78).astype(np.float32)
+
+    print("\nProcessing 10 test flows...")
+    result = analyzer.predict(test_features)
+
+    if 'predictions' in result:
+        for pred in result['predictions']:
+            status = "🚨 ATTACK" if pred['is_attack'] else "✅ BENIGN"
+            print(f"  Flow {pred['flow_index']}: {status} ({pred['confidence']:.1%})")
+
+    print(f"\nStats: {analyzer.get_stats()}")

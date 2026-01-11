@@ -118,7 +118,7 @@ class FeatureExtractor:
         if stat == 'mean':
             return float(np.mean(arr))
         elif stat == 'std':
-            return float(np.std(arr))
+            return float(np.std(arr)) if len(arr) > 1 else 0.0
         elif stat == 'max':
             return float(np.max(arr))
         elif stat == 'min':
@@ -126,7 +126,7 @@ class FeatureExtractor:
         elif stat == 'sum':
             return float(np.sum(arr))
         elif stat == 'var':
-            return float(np.var(arr))
+            return float(np.var(arr)) if len(arr) > 1 else 0.0
         else:
             return 0.0
 
@@ -284,3 +284,93 @@ class FeatureExtractor:
         features['Active Std'] = 0.0
         features['Active Max'] = 0.0
         features['Active Min'] = 0.0
+        features['Idle Mean'] = 0.0
+        features['Idle Std'] = 0.0
+        features['Idle Max'] = 0.0
+        features['Idle Min'] = 0.0
+
+        return features
+
+    def extract_array(self, flow_data: Dict[str, Any]) -> np.ndarray:
+        """
+        Извлекает признаки как numpy массив
+
+        Args:
+            flow_data: Данные потока
+
+        Returns:
+            Массив признаков
+        """
+        features = self.extract(flow_data)
+        return np.array([features.get(name, 0.0) for name in self.feature_names],
+                       dtype=np.float32)
+
+    def get_feature_names(self) -> List[str]:
+        """Возвращает список имён признаков"""
+        return self.feature_names.copy()
+
+    def extract_batch(self, flows: List[Dict[str, Any]]) -> np.ndarray:
+        """
+        Извлекает признаки для батча потоков
+
+        Args:
+            flows: Список потоков
+
+        Returns:
+            2D массив признаков [n_flows, n_features]
+        """
+        if not flows:
+            return np.array([]).reshape(0, len(self.feature_names))
+
+        return np.vstack([self.extract_array(flow) for flow in flows])
+
+    def get_feature_count(self) -> int:
+        """Возвращает количество признаков"""
+        return len(self.feature_names)
+
+
+# Тестирование
+if __name__ == "__main__":
+    # Тестовые данные потока
+    test_flow = {
+        'src_ip': '192.168.1.100',
+        'dst_ip': '8.8.8.8',
+        'src_port': 54321,
+        'dst_port': 443,
+        'protocol': 6,
+        'duration': 1.5,
+        'total_fwd_packets': 10,
+        'total_bwd_packets': 8,
+        'total_fwd_bytes': 1500,
+        'total_bwd_bytes': 12000,
+        'fwd_packet_lengths': [150, 150, 150, 150, 150, 150, 150, 150, 150, 150],
+        'bwd_packet_lengths': [1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500],
+        'fwd_iat': [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+        'bwd_iat': [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15],
+        'fwd_psh_flags': 5,
+        'bwd_psh_flags': 3,
+        'syn_count': 1,
+        'ack_count': 18,
+        'fin_count': 2,
+    }
+
+    extractor = FeatureExtractor()
+
+    print("Feature Extractor Test")
+    print("=" * 50)
+    print(f"Number of features: {extractor.get_feature_count()}")
+    print()
+
+    # Извлекаем признаки
+    features_dict = extractor.extract(test_flow)
+    features_array = extractor.extract_array(test_flow)
+
+    print("Sample features (dict):")
+    for name in list(features_dict.keys())[:10]:
+        print(f"  {name}: {features_dict[name]:.4f}")
+    print("  ...")
+
+    print()
+    print(f"Features array shape: {features_array.shape}")
+    print(f"Features array dtype: {features_array.dtype}")
+    print(f"First 5 values: {features_array[:5]}")
