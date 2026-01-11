@@ -20,7 +20,8 @@ _offline_state = {
     'progress': 0,
     'total': 0,
     'results': None,
-    'error': None
+    'error': None,
+    'project_root': None
 }
 
 
@@ -60,21 +61,26 @@ def analyze_dataset():
     max_rows = int(request.form.get('max_rows', 10000))
     threshold = float(request.form.get('threshold', 0.5))
 
+    # Store project root before starting thread
+    project_root = current_app.config['PROJECT_ROOT']
+
     # Start analysis in background
     _offline_state['running'] = True
     _offline_state['progress'] = 0
     _offline_state['total'] = 0
     _offline_state['results'] = None
     _offline_state['error'] = None
+    _offline_state['project_root'] = project_root
 
     def run_analysis():
         global _offline_state
         try:
-            project_root = current_app.config['PROJECT_ROOT']
+            # Use stored project_root
+            proj_root = _offline_state['project_root']
 
             # Load data
             if filename.endswith('.csv'):
-                df = pd.read_csv(temp_path, nrows=max_rows)
+                df = pd.read_csv(temp_path, nrows=max_rows, encoding='utf-8', encoding_errors='replace')
             else:
                 df = pd.read_parquet(temp_path)
                 if len(df) > max_rows:
@@ -83,24 +89,46 @@ def analyze_dataset():
             _offline_state['total'] = len(df)
 
             # Load feature schema
-            with open(project_root / 'artifacts' / 'feature_schema.json') as f:
+            schema_path = proj_root / 'artifacts' / 'feature_schema.json'
+            with open(schema_path) as f:
                 schema = json.load(f)
 
             feature_cols = schema['feature_columns']
 
-            # Check if columns exist
+            # Check if columns exist - strip whitespace from column names
+            df.columns = df.columns.str.strip()
+
             missing_cols = [c for c in feature_cols if c not in df.columns]
             if missing_cols:
-                _offline_state['error'] = f"Missing columns: {missing_cols[:5]}..."
-                _offline_state['running'] = False
-                return
+                # Try case-insensitive match
+                df_cols_lower = {c.lower(): c for c in df.columns}
+                feature_cols_mapped = []
+                still_missing = []
+
+                for fc in feature_cols:
+                    if fc in df.columns:
+                        feature_cols_mapped.append(fc)
+                    elif fc.lower() in df_cols_lower:
+                        feature_cols_mapped.append(df_cols_lower[fc.lower()])
+                    else:
+                        still_missing.append(fc)
+
+                if still_missing:
+                    _offline_state['error'] = f"Missing columns: {still_missing[:5]}..."
+                    _offline_state['running'] = False
+                    return
+
+                feature_cols = feature_cols_mapped
 
             # Extract features
-            X = df[feature_cols].values
+            X = df[feature_cols].values.astype(np.float64)
+
+            # Replace inf/nan
+            X = np.nan_to_num(X, nan=0.0, posinf=1e10, neginf=-1e10)
 
             # Check for label column
             label_col = None
-            for col in ['Label', 'label', 'class', 'Class']:
+            for col in ['Label', 'label', 'class', 'Class', ' Label']:
                 if col in df.columns:
                     label_col = col
                     break
@@ -108,16 +136,18 @@ def analyze_dataset():
             y_true = None
             if label_col:
                 # Convert labels to binary
-                labels = df[label_col].astype(str).str.upper()
+                labels = df[label_col].astype(str).str.strip().str.upper()
                 y_true = (~labels.isin(['BENIGN', '0', 'NORMAL'])).astype(int).values
 
             # Load predictor
+            import sys
+            sys.path.insert(0, str(proj_root))
             from src.inference import Predictor
 
             predictor = Predictor(
-                model_path=str(project_root / 'training_artifacts' / 'best_model_XGB_regularized.joblib'),
-                preprocessor_path=str(project_root / 'artifacts' / 'preprocessor.joblib'),
-                feature_schema_path=str(project_root / 'artifacts' / 'feature_schema.json'),
+                model_path=str(proj_root / 'training_artifacts' / 'best_model_XGB_regularized.joblib'),
+                preprocessor_path=str(proj_root / 'artifacts' / 'preprocessor.joblib'),
+                feature_schema_path=str(proj_root / 'artifacts' / 'feature_schema.json'),
                 threshold=threshold
             )
             predictor.load()
@@ -156,7 +186,7 @@ def analyze_dataset():
                 precision = tp / (tp + fp) if (tp + fp) > 0 else 0
                 recall = tp / (tp + fn) if (tp + fn) > 0 else 0
                 f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-                accuracy = (tp + tn) / len(predictions)
+                accuracy = (tp + tn) / len(predictions) if len(predictions) > 0 else 0
 
                 results['has_labels'] = True
                 results['true_benign'] = int((y_true == 0).sum())
