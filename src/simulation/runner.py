@@ -120,6 +120,11 @@ class SimulationRunner:
 
     def _process_batch(self, batch: FlowBatch):
         """Process single batch."""
+        import time
+
+        # Measure actual inference time
+        start_time = time.perf_counter()
+
         alerts = self.pipeline.process_batch(
             features=batch.features,
             flow_indices=batch.indices,
@@ -127,12 +132,16 @@ class SimulationRunner:
             store_alerts=self.config.store_alerts
         )
 
+        batch_inference_time = (time.perf_counter() - start_time) * 1000  # ms
+        per_flow_latency = batch_inference_time / batch.size if batch.size > 0 else 0
+
         # Update metrics
         tp = fp = tn = fn = 0
-        latencies = []
+
+        alert_indices = set(a.flow_index for a in alerts)
 
         for i in range(batch.size):
-            pred = 1 if any(a.flow_index == batch.indices[i] for a in alerts) else 0
+            pred = 1 if batch.indices[i] in alert_indices else 0
             true = batch.labels[i]
 
             if pred == 1 and true == 1:
@@ -144,10 +153,8 @@ class SimulationRunner:
             else:
                 fn += 1
 
-        # Estimate per-flow latency from batch
-        batch_latency = sum(a.inference_time_ms for a in alerts) if alerts else 0.1
-        per_flow = batch_latency / batch.size if batch.size > 0 else 0.1
-        latencies = [per_flow] * batch.size
+        # Use actual measured latency
+        latencies = [per_flow_latency] * batch.size
 
         self.metrics.update(
             flows=batch.size,
