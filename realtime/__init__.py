@@ -1,6 +1,6 @@
 """
 Real-time Network Traffic Analysis Module
-Модуль для анализа сетевого трафика в реальном времени
+Module for real-time network traffic analysis
 """
 
 from .capture import PacketCapture

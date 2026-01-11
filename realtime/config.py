@@ -1,5 +1,5 @@
 """
-Конфигурация модуля реального времени
+Real-time module configuration
 """
 
 import os
@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Any
 
 @dataclass
 class CaptureConfig:
-    """Конфигурация захвата пакетов"""
+    """Packet capture configuration"""
     interface: Optional[str] = None
     bpf_filter: str = "ip"
     max_queue_size: int = 10000
@@ -19,7 +19,7 @@ class CaptureConfig:
 
 @dataclass
 class FlowConfig:
-    """Конфигурация агрегации потоков"""
+    """Flow aggregation configuration"""
     timeout_seconds: float = 120.0
     activity_timeout: float = 5.0
     max_flows: int = 100000
@@ -28,7 +28,7 @@ class FlowConfig:
 
 @dataclass
 class AnalyzerConfig:
-    """Конфигурация анализатора"""
+    """Analyzer configuration"""
     model_path: Optional[str] = None
     scaler_path: Optional[str] = None
     config_path: Optional[str] = None
@@ -39,7 +39,7 @@ class AnalyzerConfig:
 
 @dataclass
 class AlertConfig:
-    """Конфигурация оповещений"""
+    """Alert configuration"""
     enabled: bool = True
     threshold: int = 10
     window_seconds: float = 60.0
@@ -51,7 +51,7 @@ class AlertConfig:
 
 @dataclass
 class LoggingConfig:
-    """Конфигурация логирования"""
+    """Logging configuration"""
     level: str = "INFO"
     file: Optional[str] = None
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -61,14 +61,14 @@ class LoggingConfig:
 
 @dataclass
 class PipelineConfig:
-    """Полная конфигурация pipeline"""
+    """Full pipeline configuration"""
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     flow: FlowConfig = field(default_factory=FlowConfig)
     analyzer: AnalyzerConfig = field(default_factory=AnalyzerConfig)
     alert: AlertConfig = field(default_factory=AlertConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
-    # Общие настройки
+    # General settings
     analysis_interval: float = 5.0
     results_history_size: int = 1000
     save_results: bool = False
@@ -76,7 +76,7 @@ class PipelineConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'PipelineConfig':
-        """Создаёт конфигурацию из словаря"""
+        """Creates a configuration from a dictionary"""
         config = cls()
 
         if 'capture' in data:
@@ -90,7 +90,7 @@ class PipelineConfig:
         if 'logging' in data:
             config.logging = LoggingConfig(**data['logging'])
 
-        # Общие настройки
+        # General settings
         for key in ['analysis_interval', 'results_history_size',
                     'save_results', 'results_path']:
             if key in data:
@@ -100,14 +100,14 @@ class PipelineConfig:
 
     @classmethod
     def from_json(cls, filepath: str) -> 'PipelineConfig':
-        """Загружает конфигурацию из JSON файла"""
+        """Loads a configuration from a JSON file"""
         with open(filepath, 'r') as f:
             data = json.load(f)
         return cls.from_dict(data)
 
     @classmethod
     def from_env(cls) -> 'PipelineConfig':
-        """Создаёт конфигурацию из переменных окружения"""
+        """Creates a configuration from environment variables"""
         config = cls()
 
         # Capture
@@ -137,25 +137,25 @@ class PipelineConfig:
         return config
 
     def to_dict(self) -> Dict[str, Any]:
-        """Конвертирует в словарь"""
+        """Converts to a dictionary"""
         return asdict(self)
 
     def save_json(self, filepath: str):
-        """Сохраняет конфигурацию в JSON файл"""
+        """Saves the configuration to a JSON file"""
         os.makedirs(os.path.dirname(filepath), exist_ok=True) if os.path.dirname(filepath) else None
         with open(filepath, 'w') as f:
             json.dump(self.to_dict(), f, indent=2)
 
     def validate(self) -> List[str]:
         """
-        Валидирует конфигурацию
+        Validates the configuration
 
         Returns:
-            Список ошибок (пустой если всё ок)
+            List of errors (empty if everything is OK)
         """
         errors = []
 
-        # Проверяем пути к модели
+        # Validate model paths
         if self.analyzer.model_path:
             if not os.path.exists(self.analyzer.model_path):
                 errors.append(f"Model file not found: {self.analyzer.model_path}")
@@ -164,7 +164,7 @@ class PipelineConfig:
             if not os.path.exists(self.analyzer.scaler_path):
                 errors.append(f"Scaler file not found: {self.analyzer.scaler_path}")
 
-        # Проверяем интерфейс
+        # Validate interface
         if self.capture.interface:
             try:
                 from .capture import PacketCapture
@@ -174,7 +174,7 @@ class PipelineConfig:
             except Exception:
                 pass
 
-        # Проверяем значения
+        # Validate values
         if self.flow.timeout_seconds <= 0:
             errors.append("Flow timeout must be positive")
 
@@ -184,12 +184,12 @@ class PipelineConfig:
         return errors
 
 
-# Конфигурация по умолчанию
+# Default configuration
 DEFAULT_CONFIG = PipelineConfig()
 
 
 def create_example_config(filepath: str = "config.example.json"):
-    """Создаёт пример конфигурационного файла"""
+    """Creates an example configuration file"""
     config = PipelineConfig(
         capture=CaptureConfig(
             interface="eth0",

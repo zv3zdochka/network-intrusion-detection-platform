@@ -1,7 +1,7 @@
 """
-Модуль захвата сетевых пакетов
-Использует scapy для перехвата трафика
-Поддержка Windows через Npcap
+Network Packet Capture Module
+Uses scapy to capture traffic
+Windows support via Npcap
 """
 
 import threading
@@ -13,28 +13,30 @@ from typing import Optional, Callable, Dict, Any, List
 from dataclasses import dataclass, field
 from collections import defaultdict
 
-# Определяем ОС
+# Detect operating system
 IS_WINDOWS = platform.system() == 'Windows'
 
-# Настройка для Windows
+# Windows configuration
 if IS_WINDOWS:
-    # Важно для Windows - указываем использовать Npcap
+    # Important for Windows: configure to use Npcap
     import os
-    # Добавляем путь к Npcap
+
+    # Add Npcap path
     npcap_path = r'C:\Windows\System32\Npcap'
     if os.path.exists(npcap_path):
         os.environ['PATH'] = npcap_path + ';' + os.environ.get('PATH', '')
 
 try:
-    # Для Windows важен порядок импорта
+    # Import order matters on Windows
     if IS_WINDOWS:
         from scapy.arch.windows import get_windows_if_list
     from scapy.all import sniff, IP, TCP, UDP, ICMP, Raw, conf, get_if_list
     from scapy.layers.inet import IP as IPLayer
+
     SCAPY_AVAILABLE = True
 
     if IS_WINDOWS:
-        # Настройки для Windows
+        # Windows settings
         conf.use_pcap = True
         conf.use_npcap = True
 
@@ -47,7 +49,7 @@ except ImportError as e:
 
 @dataclass
 class PacketInfo:
-    """Структура для хранения информации о пакете"""
+    """Data structure for storing packet information"""
     timestamp: float
     src_ip: str
     dst_ip: str
@@ -60,14 +62,14 @@ class PacketInfo:
     raw_packet: Any = None
 
     def get_flow_key(self) -> tuple:
-        """Возвращает ключ потока (bidirectional)"""
+        """Returns the flow key (bidirectional)"""
         if (self.src_ip, self.src_port) < (self.dst_ip, self.dst_port):
             return (self.src_ip, self.src_port, self.dst_ip, self.dst_port, self.protocol)
         else:
             return (self.dst_ip, self.dst_port, self.src_ip, self.src_port, self.protocol)
 
     def get_direction(self) -> str:
-        """Определяет направление пакета в потоке"""
+        """Determines the packet direction within the flow"""
         if (self.src_ip, self.src_port) < (self.dst_ip, self.dst_port):
             return 'forward'
         return 'backward'
@@ -75,23 +77,23 @@ class PacketInfo:
 
 class PacketCapture:
     """
-    Класс для захвата сетевых пакетов в реальном времени
-    Поддерживает Windows (Npcap) и Linux
+    Real-time network packet capture class
+    Supports Windows (Npcap) and Linux
     """
 
     def __init__(
-        self,
-        interface: Optional[str] = None,
-        packet_queue: Optional[queue.Queue] = None,
-        max_queue_size: int = 10000,
-        bpf_filter: Optional[str] = None
+            self,
+            interface: Optional[str] = None,
+            packet_queue: Optional[queue.Queue] = None,
+            max_queue_size: int = 10000,
+            bpf_filter: Optional[str] = None
     ):
         """
         Args:
-            interface: Сетевой интерфейс для захвата (None = первый активный)
-            packet_queue: Очередь для пакетов (создаётся автоматически если None)
-            max_queue_size: Максимальный размер очереди
-            bpf_filter: BPF фильтр (например, "tcp port 80")
+            interface: Network interface to capture on (None = first active)
+            packet_queue: Packet queue (created automatically if None)
+            max_queue_size: Maximum queue size
+            bpf_filter: BPF filter (e.g., "tcp port 80")
         """
         if not SCAPY_AVAILABLE:
             raise RuntimeError(
@@ -109,25 +111,25 @@ class PacketCapture:
         self._stats = defaultdict(int)
         self._start_time: Optional[float] = None
 
-        # Автоматически выбираем интерфейс если не указан
+        # Automatically select interface if not specified
         if self.interface is None:
             self.interface = self._get_default_interface()
 
     def _get_default_interface(self) -> Optional[str]:
-        """Получает интерфейс по умолчанию"""
+        """Returns the default interface"""
         try:
             if IS_WINDOWS:
                 interfaces = get_windows_if_list()
-                # Ищем активный интерфейс с IP
+                # Look for an active interface with an IP
                 for iface in interfaces:
                     if iface.get('ips') and any(ip for ip in iface['ips'] if not ip.startswith('169.254')):
                         return iface['name']
-                # Если не нашли, берём первый
+                # Fallback to the first one
                 if interfaces:
                     return interfaces[0]['name']
             else:
                 interfaces = get_if_list()
-                # Исключаем loopback
+                # Exclude loopback
                 for iface in interfaces:
                     if iface != 'lo' and not iface.startswith('lo'):
                         return iface
@@ -137,7 +139,7 @@ class PacketCapture:
 
     @staticmethod
     def list_interfaces() -> List[Dict[str, Any]]:
-        """Возвращает список доступных сетевых интерфейсов"""
+        """Returns a list of available network interfaces"""
         if not SCAPY_AVAILABLE:
             return []
 
@@ -161,19 +163,19 @@ class PacketCapture:
 
     @staticmethod
     def list_interface_names() -> List[str]:
-        """Возвращает только имена интерфейсов"""
+        """Returns interface names only"""
         interfaces = PacketCapture.list_interfaces()
         return [iface['name'] for iface in interfaces if iface.get('name')]
 
     def _parse_packet(self, packet) -> Optional[PacketInfo]:
-        """Парсит scapy пакет в PacketInfo"""
+        """Parses a scapy packet into PacketInfo"""
         try:
             if not packet.haslayer(IP):
                 return None
 
             ip_layer = packet[IP]
 
-            # Базовая информация
+            # Base information
             src_ip = ip_layer.src
             dst_ip = ip_layer.dst
             protocol = ip_layer.proto
@@ -227,12 +229,12 @@ class PacketCapture:
                 raw_packet=packet
             )
 
-        except Exception as e:
+        except Exception:
             self._stats['parse_errors'] += 1
             return None
 
     def _packet_callback(self, packet):
-        """Callback для обработки захваченного пакета"""
+        """Callback for processing a captured packet"""
         self._stats['total_packets'] += 1
 
         packet_info = self._parse_packet(packet)
@@ -247,7 +249,7 @@ class PacketCapture:
             self._stats['dropped_packets'] += 1
 
     def _capture_loop(self):
-        """Основной цикл захвата пакетов"""
+        """Main packet capture loop"""
         try:
             print(f"Starting capture on interface: {self.interface}")
             print(f"Filter: {self.bpf_filter or 'none'}")
@@ -271,7 +273,7 @@ class PacketCapture:
             self._running = False
 
     def start(self):
-        """Запускает захват пакетов в отдельном потоке"""
+        """Starts packet capture in a separate thread"""
         if self._running:
             print("Capture already running")
             return
@@ -292,25 +294,25 @@ class PacketCapture:
         )
         self._capture_thread.start()
 
-        # Даём время на запуск
+        # Give the thread time to start
         time.sleep(0.5)
 
         if self._running:
             print(f"Packet capture started on interface: {self.interface}")
 
     def stop(self):
-        """Останавливает захват пакетов"""
+        """Stops packet capture"""
         self._running = False
         if self._capture_thread:
             self._capture_thread.join(timeout=3.0)
         print("Packet capture stopped")
 
     def is_running(self) -> bool:
-        """Проверяет, запущен ли захват"""
+        """Checks whether capture is running"""
         return self._running
 
     def get_stats(self) -> Dict[str, Any]:
-        """Возвращает статистику захвата"""
+        """Returns capture statistics"""
         uptime = time.time() - self._start_time if self._start_time else 0
         return {
             **dict(self._stats),
@@ -322,14 +324,14 @@ class PacketCapture:
         }
 
     def get_packet(self, timeout: float = 1.0) -> Optional[PacketInfo]:
-        """Получает пакет из очереди"""
+        """Gets a packet from the queue"""
         try:
             return self.packet_queue.get(timeout=timeout)
         except queue.Empty:
             return None
 
 
-# Тестирование модуля
+# Module test
 if __name__ == "__main__":
     print("=" * 60)
     print("Network Interface Detection")
@@ -357,7 +359,7 @@ if __name__ == "__main__":
     print("Testing Packet Capture")
     print("=" * 60)
 
-    # Выбираем интерфейс
+    # Select interface
     selected = interfaces[0]['name'] if interfaces else None
     print(f"Using interface: {selected}")
 

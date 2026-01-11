@@ -1,6 +1,6 @@
 """
-Извлечение признаков из сетевых потоков
-Формирует признаки совместимые с CICIDS2017 датасетом
+Feature extraction from network flows
+Builds features compatible with the CICIDS2017 dataset
 """
 
 import numpy as np
@@ -10,8 +10,8 @@ from dataclasses import dataclass
 
 @dataclass
 class FeatureConfig:
-    """Конфигурация признаков"""
-    # Список признаков из CICIDS2017 которые мы можем извлечь
+    """Feature configuration"""
+    # List of CICIDS2017 features that we can extract
     FEATURE_NAMES = [
         'Destination Port',
         'Flow Duration',
@@ -95,21 +95,21 @@ class FeatureConfig:
 
 class FeatureExtractor:
     """
-    Извлекает признаки из агрегированных потоков
-    Формат совместим с CICIDS2017
+    Extracts features from aggregated flows
+    Output format is compatible with CICIDS2017
     """
 
     def __init__(self, feature_names: Optional[List[str]] = None):
         """
         Args:
-            feature_names: Список имён признаков для извлечения
-                          (None = все доступные)
+            feature_names: List of feature names to extract
+                           (None = all available)
         """
         self.feature_names = feature_names or FeatureConfig.FEATURE_NAMES
-        self._eps = 1e-10  # Для избежания деления на ноль
+        self._eps = 1e-10  # Avoid division by zero
 
     def _safe_stat(self, values: List[float], stat: str) -> float:
-        """Безопасное вычисление статистики"""
+        """Safely computes a statistic"""
         if not values:
             return 0.0
 
@@ -132,17 +132,17 @@ class FeatureExtractor:
 
     def extract(self, flow_data: Dict[str, Any]) -> Dict[str, float]:
         """
-        Извлекает признаки из данных потока
+        Extracts features from flow data
 
         Args:
-            flow_data: Словарь с данными потока из FlowAggregator
+            flow_data: Flow data dictionary from FlowAggregator
 
         Returns:
-            Словарь признаков
+            Feature dictionary
         """
         features = {}
 
-        # Базовые данные
+        # Base data
         duration = max(flow_data.get('duration', 0), self._eps)
         fwd_packets = flow_data.get('total_fwd_packets', 0)
         bwd_packets = flow_data.get('total_bwd_packets', 0)
@@ -160,9 +160,9 @@ class FeatureExtractor:
         bwd_iat = flow_data.get('bwd_iat', [])
         all_iat = fwd_iat + bwd_iat
 
-        # Извлечение признаков
+        # Feature extraction
         features['Destination Port'] = float(flow_data.get('dst_port', 0))
-        features['Flow Duration'] = duration * 1e6  # В микросекундах
+        features['Flow Duration'] = duration * 1e6  # Microseconds
 
         # Packet counts
         features['Total Fwd Packets'] = float(fwd_packets)
@@ -204,7 +204,7 @@ class FeatureExtractor:
         features['Bwd IAT Max'] = self._safe_stat(bwd_iat, 'max') * 1e6
         features['Bwd IAT Min'] = self._safe_stat(bwd_iat, 'min') * 1e6
 
-        # TCP Flags
+        # TCP flags
         features['Fwd PSH Flags'] = float(flow_data.get('fwd_psh_flags', 0))
         features['Bwd PSH Flags'] = float(flow_data.get('bwd_psh_flags', 0))
         features['Fwd URG Flags'] = float(flow_data.get('fwd_urg_flags', 0))
@@ -257,7 +257,7 @@ class FeatureExtractor:
         else:
             features['Avg Bwd Segment Size'] = 0.0
 
-        # Bulk averages (упрощённая версия)
+        # Bulk averages (simplified version)
         features['Fwd Avg Bytes/Bulk'] = 0.0
         features['Fwd Avg Packets/Bulk'] = 0.0
         features['Fwd Avg Bulk Rate'] = 0.0
@@ -265,13 +265,13 @@ class FeatureExtractor:
         features['Bwd Avg Packets/Bulk'] = 0.0
         features['Bwd Avg Bulk Rate'] = 0.0
 
-        # Subflow (для одного потока = основные значения)
+        # Subflow (for a single flow, this equals the main values)
         features['Subflow Fwd Packets'] = float(fwd_packets)
         features['Subflow Fwd Bytes'] = float(fwd_bytes)
         features['Subflow Bwd Packets'] = float(bwd_packets)
         features['Subflow Bwd Bytes'] = float(bwd_bytes)
 
-        # Init window bytes (требует более глубокого парсинга TCP)
+        # Init window bytes (requires deeper TCP parsing)
         features['Init_Win_bytes_forward'] = 0.0
         features['Init_Win_bytes_backward'] = 0.0
 
@@ -279,7 +279,7 @@ class FeatureExtractor:
         features['act_data_pkt_fwd'] = float(flow_data.get('fwd_payload_bytes', 0) > 0)
         features['min_seg_size_forward'] = self._safe_stat(fwd_lengths, 'min')
 
-        # Active/Idle times (упрощённая версия)
+        # Active/idle times (simplified version)
         features['Active Mean'] = 0.0
         features['Active Std'] = 0.0
         features['Active Max'] = 0.0
@@ -293,31 +293,31 @@ class FeatureExtractor:
 
     def extract_array(self, flow_data: Dict[str, Any]) -> np.ndarray:
         """
-        Извлекает признаки как numpy массив
+        Extracts features as a numpy array
 
         Args:
-            flow_data: Данные потока
+            flow_data: Flow data
 
         Returns:
-            Массив признаков
+            Feature array
         """
         features = self.extract(flow_data)
         return np.array([features.get(name, 0.0) for name in self.feature_names],
                        dtype=np.float32)
 
     def get_feature_names(self) -> List[str]:
-        """Возвращает список имён признаков"""
+        """Returns the list of feature names"""
         return self.feature_names.copy()
 
     def extract_batch(self, flows: List[Dict[str, Any]]) -> np.ndarray:
         """
-        Извлекает признаки для батча потоков
+        Extracts features for a batch of flows
 
         Args:
-            flows: Список потоков
+            flows: List of flows
 
         Returns:
-            2D массив признаков [n_flows, n_features]
+            2D feature array [n_flows, n_features]
         """
         if not flows:
             return np.array([]).reshape(0, len(self.feature_names))
@@ -325,13 +325,13 @@ class FeatureExtractor:
         return np.vstack([self.extract_array(flow) for flow in flows])
 
     def get_feature_count(self) -> int:
-        """Возвращает количество признаков"""
+        """Returns the number of features"""
         return len(self.feature_names)
 
 
-# Тестирование
+# Testing
 if __name__ == "__main__":
-    # Тестовые данные потока
+    # Test flow data
     test_flow = {
         'src_ip': '192.168.1.100',
         'dst_ip': '8.8.8.8',
@@ -361,7 +361,7 @@ if __name__ == "__main__":
     print(f"Number of features: {extractor.get_feature_count()}")
     print()
 
-    # Извлекаем признаки
+    # Extract features
     features_dict = extractor.extract(test_flow)
     features_array = extractor.extract_array(test_flow)
 

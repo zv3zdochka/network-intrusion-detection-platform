@@ -1,6 +1,6 @@
 """
-Анализатор трафика в реальном времени
-Использует Predictor и InferencePipeline из src/inference
+Real-time Traffic Analyzer
+Uses Predictor and InferencePipeline from src/inference
 """
 
 import sys
@@ -11,13 +11,14 @@ from collections import deque
 import threading
 import numpy as np
 
-# Добавляем корень проекта в путь
+# Add project root to Python path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Импортируем ваш Predictor
+# Import Predictor
 try:
     from src.inference import Predictor, InferencePipeline
+
     PREDICTOR_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import Predictor: {e}")
@@ -26,39 +27,39 @@ except ImportError as e:
 
 class TrafficAnalyzer:
     """
-    Анализирует сетевой трафик с использованием Predictor из src/inference
+    Analyzes network traffic using Predictor from src/inference
     """
 
     def __init__(
-        self,
-        model_path: Optional[str] = None,
-        preprocessor_path: Optional[str] = None,
-        feature_schema_path: Optional[str] = None,
-        threshold: float = 0.5,
-        history_size: int = 1000
+            self,
+            model_path: Optional[str] = None,
+            preprocessor_path: Optional[str] = None,
+            feature_schema_path: Optional[str] = None,
+            threshold: float = 0.5,
+            history_size: int = 1000
     ):
         """
         Args:
-            model_path: Путь к модели (.pkl или .joblib)
-            preprocessor_path: Путь к препроцессору (.pkl)
-            feature_schema_path: Путь к схеме признаков (.json)
-            threshold: Порог для классификации атаки
-            history_size: Размер истории предсказаний
+            model_path: Path to the model (.pkl or .joblib)
+            preprocessor_path: Path to the preprocessor (.pkl)
+            feature_schema_path: Path to the feature schema (.json)
+            threshold: Attack classification threshold
+            history_size: Size of prediction history
         """
         self.model_path = model_path
         self.preprocessor_path = preprocessor_path
         self.feature_schema_path = feature_schema_path
         self.threshold = threshold
 
-        # Predictor и Pipeline
+        # Predictor and pipeline
         self.predictor: Optional[Predictor] = None
         self.pipeline: Optional[InferencePipeline] = None
 
-        # Метаданные
+        # Metadata
         self.feature_cols: List[str] = []
         self.n_features: int = 78
 
-        # История и статистика
+        # History and statistics
         self._prediction_history = deque(maxlen=history_size)
         self._lock = threading.Lock()
         self._flow_counter = 0
@@ -70,24 +71,24 @@ class TrafficAnalyzer:
             'errors': 0
         }
 
-        # Загружаем модель
+        # Load model if provided
         if model_path:
             self.load_model(model_path, preprocessor_path, feature_schema_path)
 
     def load_model(
-        self,
-        model_path: str,
-        preprocessor_path: Optional[str] = None,
-        feature_schema_path: Optional[str] = None
+            self,
+            model_path: str,
+            preprocessor_path: Optional[str] = None,
+            feature_schema_path: Optional[str] = None
     ):
-        """Загружает модель используя Predictor из src/inference"""
+        """Loads the model using Predictor from src/inference"""
 
         if not PREDICTOR_AVAILABLE:
             raise RuntimeError(
                 "Predictor not available. Make sure src/inference is accessible."
             )
 
-        print(f"[Analyzer] Loading model...")
+        print("[Analyzer] Loading model...")
 
         model_path = Path(model_path)
         if not model_path.exists():
@@ -95,7 +96,7 @@ class TrafficAnalyzer:
 
         model_dir = model_path.parent
 
-        # Автоопределение путей если не указаны
+        # Automatic path detection if not provided
         if preprocessor_path is None:
             possible = [
                 model_dir / 'preprocessor.pkl',
@@ -129,7 +130,7 @@ class TrafficAnalyzer:
             )
 
         try:
-            # Создаём Predictor
+            # Create Predictor
             self.predictor = Predictor(
                 model_path=str(model_path),
                 preprocessor_path=preprocessor_path,
@@ -138,19 +139,19 @@ class TrafficAnalyzer:
             )
             self.predictor.load()
 
-            # Создаём Pipeline
+            # Create inference pipeline
             self.pipeline = InferencePipeline(
                 predictor=self.predictor,
                 alert_threshold=self.threshold
             )
 
-            # Сохраняем метаданные
+            # Store metadata
             self.feature_cols = self.predictor.feature_cols or []
             self.n_features = len(self.feature_cols) if self.feature_cols else 78
 
             print(f"  Features: {self.n_features}")
             print(f"  Model type: {type(self.predictor.model).__name__}")
-            print(f"[Analyzer] Model loaded successfully!")
+            print("[Analyzer] Model loaded successfully!")
 
         except Exception as e:
             import traceback
@@ -159,17 +160,17 @@ class TrafficAnalyzer:
             raise
 
     def preprocess_features(self, features: np.ndarray) -> np.ndarray:
-        """Препроцессинг признаков через ваш preprocessor"""
+        """Applies preprocessing using the loaded preprocessor"""
 
-        # Обеспечиваем 2D
+        # Ensure 2D input
         if features.ndim == 1:
             features = features.reshape(1, -1)
 
-        # Очистка данных
+        # Data cleanup
         features = np.nan_to_num(features, nan=0.0, posinf=1e10, neginf=-1e10)
         features = np.clip(features, -1e15, 1e15).astype(np.float64)
 
-        # Применяем препроцессор если загружен
+        # Apply preprocessor if available
         if self.predictor and self.predictor.preprocessor:
             try:
                 features = self.predictor.preprocessor.transform(features)
@@ -180,13 +181,13 @@ class TrafficAnalyzer:
 
     def predict(self, features: np.ndarray) -> Dict[str, Any]:
         """
-        Выполняет предсказание
+        Runs prediction
 
         Args:
-            features: numpy array признаков [n_features] или [batch, n_features]
+            features: numpy array of features [n_features] or [batch, n_features]
 
         Returns:
-            Словарь с результатом предсказания
+            Dictionary with prediction results
         """
         if self.predictor is None or not self.predictor.is_loaded:
             return {
@@ -196,7 +197,7 @@ class TrafficAnalyzer:
             }
 
         try:
-            # Препроцессинг
+            # Preprocessing
             if features.ndim == 1:
                 features = features.reshape(1, -1)
 
@@ -205,12 +206,12 @@ class TrafficAnalyzer:
 
             batch_size = features.shape[0]
 
-            # Индексы потоков
+            # Flow indices
             with self._lock:
                 flow_indices = list(range(self._flow_counter, self._flow_counter + batch_size))
                 self._flow_counter += batch_size
 
-            # Предсказание через pipeline
+            # Prediction via pipeline
             alerts = self.pipeline.process_batch(
                 features=features,
                 flow_indices=flow_indices,
@@ -218,13 +219,13 @@ class TrafficAnalyzer:
                 store_alerts=True
             )
 
-            # Получаем вероятности напрямую для всех потоков
+            # Get probabilities directly
             predictions, probabilities, _ = self.predictor.predict_batch(
                 features=features,
                 flow_indices=flow_indices
             )
 
-            # Формируем результаты
+            # Build results
             results = []
             alert_indices = {a.flow_index for a in alerts}
 
@@ -245,7 +246,7 @@ class TrafficAnalyzer:
                 }
                 results.append(result)
 
-                # Статистика
+                # Update statistics
                 with self._lock:
                     self._stats['total_predictions'] += 1
                     if is_attack:
@@ -267,7 +268,7 @@ class TrafficAnalyzer:
             }
 
     def get_alerts(self, limit: int = 100) -> List[Dict]:
-        """Получает последние алерты"""
+        """Returns recent alerts"""
         if self.pipeline is None:
             return []
 
@@ -275,7 +276,7 @@ class TrafficAnalyzer:
         return [a.to_dict() for a in alerts]
 
     def get_stats(self) -> Dict[str, Any]:
-        """Возвращает статистику"""
+        """Returns analyzer statistics"""
         with self._lock:
             total = max(self._stats['total_predictions'], 1)
 
@@ -288,7 +289,7 @@ class TrafficAnalyzer:
                 'history_size': len(self._prediction_history)
             }
 
-            # Добавляем статистику из pipeline если есть
+            # Add pipeline statistics if available
             if self.pipeline:
                 pipeline_stats = self.pipeline.get_stats()
                 stats['pipeline'] = pipeline_stats
@@ -296,12 +297,12 @@ class TrafficAnalyzer:
             return stats
 
     def get_recent_predictions(self, n: int = 100) -> List[Dict[str, Any]]:
-        """Возвращает последние предсказания"""
+        """Returns recent predictions"""
         with self._lock:
             return list(self._prediction_history)[-n:]
 
     def reset(self):
-        """Сбрасывает состояние"""
+        """Resets internal state"""
         with self._lock:
             self._flow_counter = 0
             self._prediction_history.clear()
@@ -316,16 +317,16 @@ class TrafficAnalyzer:
             self.pipeline.reset()
 
     def get_model_info(self) -> Dict[str, Any]:
-        """Информация о модели"""
+        """Returns model information"""
         if self.predictor:
             return self.predictor.get_model_info()
         return {'loaded': False}
 
 
-# === Заглушка для тестирования ===
+# === Dummy implementation for testing ===
 
 class DummyPredictor:
-    """Заглушка для тестирования без модели"""
+    """Dummy predictor for testing without a real model"""
 
     def __init__(self, attack_ratio: float = 0.1):
         self.attack_ratio = attack_ratio
@@ -341,9 +342,9 @@ class DummyPredictor:
     def predict_batch(self, features, flow_indices=None, true_labels=None):
         n = features.shape[0]
         probabilities = np.random.random(n)
-        # Делаем атаки редкими
-        probabilities = probabilities * 0.3  # Максимум 30%
-        # Иногда делаем атаку
+        # Make attacks rare
+        probabilities = probabilities * 0.3
+        # Occasionally generate attacks
         attack_mask = np.random.random(n) < self.attack_ratio
         probabilities[attack_mask] = np.random.uniform(0.6, 0.95, attack_mask.sum())
 
@@ -383,7 +384,7 @@ class DummyPredictor:
 
 
 class DummyPipeline:
-    """Заглушка InferencePipeline"""
+    """Dummy InferencePipeline"""
 
     def __init__(self, predictor):
         self.predictor = predictor
@@ -399,7 +400,7 @@ class DummyPipeline:
         predictions, probabilities, _ = self.predictor.predict_batch(features, flow_indices)
 
         alerts = []
-        for i, (pred, prob, flow_idx) in enumerate(zip(predictions, probabilities, flow_indices)):
+        for pred, prob, flow_idx in zip(predictions, probabilities, flow_indices):
             self.stats.total_flows += 1
 
             if pred == 1:
@@ -444,7 +445,7 @@ class DummyPipeline:
 
 
 def create_dummy_analyzer(attack_ratio: float = 0.1) -> TrafficAnalyzer:
-    """Создаёт тестовый анализатор со случайными предсказаниями"""
+    """Creates a test analyzer with random predictions"""
     analyzer = TrafficAnalyzer()
     analyzer.predictor = DummyPredictor(attack_ratio)
     analyzer.pipeline = DummyPipeline(analyzer.predictor)
@@ -453,7 +454,7 @@ def create_dummy_analyzer(attack_ratio: float = 0.1) -> TrafficAnalyzer:
     return analyzer
 
 
-# === Тест ===
+# === Test ===
 
 if __name__ == "__main__":
     print("Testing TrafficAnalyzer...")
@@ -461,7 +462,7 @@ if __name__ == "__main__":
 
     analyzer = create_dummy_analyzer(attack_ratio=0.15)
 
-    # Тест
+    # Test data
     test_features = np.random.randn(10, 78).astype(np.float32)
 
     print("\nProcessing 10 test flows...")
@@ -469,7 +470,7 @@ if __name__ == "__main__":
 
     if 'predictions' in result:
         for pred in result['predictions']:
-            status = "🚨 ATTACK" if pred['is_attack'] else "✅ BENIGN"
+            status = "ATTACK" if pred['is_attack'] else "BENIGN"
             print(f"  Flow {pred['flow_index']}: {status} ({pred['confidence']:.1%})")
 
     print(f"\nStats: {analyzer.get_stats()}")
