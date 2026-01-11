@@ -601,43 +601,43 @@ The simulation generates comprehensive visualizations saved to `reports/simulati
 
 Combined view of all key metrics in a single dashboard:
 
-![Dashboard](reports/simulation/dashboard_5.png)
+![Dashboard](reports/simulation/dashboard_6.png)
 
 #### Confusion Matrix
 
 Detailed breakdown of predictions vs actual labels:
 
-![Confusion Matrix](reports/simulation/confusion_matrix_5.png)
+![Confusion Matrix](reports/simulation/confusion_matrix_6.png)
 
 #### Classification Metrics
 
 Bar chart comparing precision, recall, F1, and accuracy:
 
-![Classification Metrics](reports/simulation/classification_metrics_5.png)
+![Classification Metrics](reports/simulation/classification_metrics_6.png)
 
 #### Metrics Over Time
 
 Tracking precision, recall, and F1 as data streams through:
 
-![Metrics Timeline](reports/simulation/metrics_timeline_5.png)
+![Metrics Timeline](reports/simulation/metrics_timeline_6.png)
 
 #### Throughput Over Time
 
 Flows processed per second and cumulative count:
 
-![Throughput Timeline](reports/simulation/throughput_timeline_5.png)
+![Throughput Timeline](reports/simulation/throughput_timeline_6.png)
 
 #### Alerts Over Time
 
 Alert generation rate and TP/FP accumulation:
 
-![Alerts Timeline](reports/simulation/alerts_timeline_5.png)
+![Alerts Timeline](reports/simulation/alerts_timeline_6.png)
 
 #### Latency Distribution
 
 Inference latency percentiles over time:
 
-![Latency Timeline](reports/simulation/latency_timeline_5.png)
+![Latency Timeline](reports/simulation/latency_timeline_6.png)
 
 ### Real-Time Metrics Snapshots
 
